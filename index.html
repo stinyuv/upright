@@ -1,0 +1,1587 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Guided Upright, 메타데이터/HDR 보존 원근 보정</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#E8E8E5; --surface:#F5F5F3; --sunken:#D9D9D5; --text:#202020; --muted:#66665F; --rule:#CBCBC6;
+  --v:#1F7FD1; --h:#C9801A; --ok:#2F8551; --warn:#B4611C; --err:#B23A3A; --onv:#FFFFFF; --onh:#1E1405;
+  --font:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,-apple-system,sans-serif;
+  --hdr:48px; --tabs:46px;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  color-scheme:dark; --bg:#2A2A29; --surface:#333331; --sunken:#202020; --text:#E7E7E3; --muted:#A3A39C; --rule:#454542;
+  --v:#5AAEF5; --h:#F0AE4A; --ok:#6CC08A; --warn:#E89A55; --err:#EC7B7B; --onv:#0E2238; --onh:#2A1800;
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark; --bg:#2A2A29; --surface:#333331; --sunken:#202020; --text:#E7E7E3; --muted:#A3A39C; --rule:#454542;
+  --v:#5AAEF5; --h:#F0AE4A; --ok:#6CC08A; --warn:#E89A55; --err:#EC7B7B; --onv:#0E2238; --onh:#2A1800;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + var(--hdr) + var(--tabs));height:100%;-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+button,input,select{font:inherit;color:inherit}
+button{touch-action:manipulation}
+:focus-visible{outline:2px solid var(--v);outline-offset:2px}
+
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:6;background:var(--surface);border-bottom:1px solid var(--rule)}
+header{display:flex;align-items:center;gap:12px;height:var(--hdr);padding:0 14px}
+header h1{font-size:15px;font-weight:600;margin:0;letter-spacing:-0.01em;white-space:nowrap}
+header .fname{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+nav.tabs{display:flex;height:var(--tabs);padding:0 8px;gap:4px}
+nav.tabs button{flex:1;border:0;background:transparent;border-bottom:2.5px solid transparent;font-weight:500;color:var(--muted);cursor:pointer;padding:0 8px}
+nav.tabs button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--text)}
+nav.tabs button:disabled{opacity:.4;cursor:not-allowed}
+nav.tabs .num{display:inline-block;min-width:20px;height:20px;line-height:20px;border-radius:10px;background:var(--sunken);font-size:12px;margin-right:6px;text-align:center}
+
+.btn{appearance:none;border:1px solid var(--rule);background:var(--surface);border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:500;white-space:nowrap;min-height:40px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--v);border-color:var(--v);color:var(--onv)}
+.btn.block{width:100%}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.small{padding:4px 10px;font-size:13px;min-height:32px}
+
+.tab{display:grid;grid-template-columns:1fr}
+.tab[hidden]{display:none}
+.stage{position:relative;background:var(--sunken);height:min(62dvh,640px);min-height:300px}
+.stage canvas.view{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#loupe{position:absolute;width:124px;height:124px;border-radius:50%;border:2px solid var(--surface);box-shadow:0 2px 10px rgba(0,0,0,.35);pointer-events:none;display:none;top:10px;left:10px}
+.panel{background:var(--surface);padding:4px 0 24px}
+.blk{padding:14px 16px;border-bottom:1px solid var(--rule)}
+.blk:last-child{border-bottom:0}
+.blk h2{font-size:14px;font-weight:600;margin:0 0 10px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.blk h2 .sub{font-weight:400;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.seg{display:flex;border:1px solid var(--rule);border-radius:8px;overflow:hidden}
+.seg button{flex:1;border:0;background:transparent;padding:8px 10px;cursor:pointer;min-height:40px;font-weight:500}
+.seg button+button{border-left:1px solid var(--rule)}
+.seg button[aria-pressed="true"]{background:var(--text);color:var(--surface)}
+#dV[aria-pressed="true"]{background:var(--v);color:var(--onv)}
+#dH[aria-pressed="true"]{background:var(--h);color:var(--onh)}
+.note{color:var(--muted);font-size:13px;margin:8px 0 0}
+.note.warn{color:var(--warn)}
+ul.lines{list-style:none;margin:10px 0 0;padding:0}
+ul.lines li{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:14px;font-variant-numeric:tabular-nums}
+ul.lines li.sel{background:var(--sunken)}
+ul.lines li .sw{width:18px;height:4px;border-radius:2px;flex:none}
+ul.lines li .grow{flex:1;min-width:0}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0}
+.row.gap{justify-content:flex-start}
+input[type=range]{width:100%;accent-color:var(--v);height:28px}
+label.chk{display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer}
+label.chk input{width:18px;height:18px;accent-color:var(--v)}
+details summary{cursor:pointer;font-weight:600;font-size:14px;list-style:none;display:flex;justify-content:space-between}
+details summary::after{content:"펼치기";font-weight:400;color:var(--muted);font-size:13px}
+details[open] summary::after{content:"접기"}
+details summary::-webkit-details-marker{display:none}
+dl.kv{display:grid;grid-template-columns:88px minmax(0,1fr);gap:4px 10px;margin:10px 0 0;font-size:13.5px}
+dl.kv dt{color:var(--muted)}
+dl.kv dd{margin:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.tag{display:inline-block;padding:0 6px;border-radius:4px;font-size:12px;font-weight:500;border:1px solid currentColor;margin-right:4px}
+.tag.ok{color:var(--ok)} .tag.warn{color:var(--warn)} .tag.err{color:var(--err)} .tag.mute{color:var(--muted)}
+.progress{height:4px;background:var(--sunken);border-radius:2px;overflow:hidden;margin:12px 0 4px}
+.progress i{display:block;height:100%;width:0;background:var(--v);transition:width .15s}
+.step{font-size:13px;color:var(--muted);min-height:1.5em}
+ol.report{margin:8px 0 0;padding-left:18px;font-size:13px}
+ol.report li{margin:2px 0}
+.check{font-size:14px;margin-top:10px}
+.check div{display:flex;gap:6px;align-items:baseline;margin:4px 0}
+.mode{font-size:14px;margin-top:10px}
+.stat{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+.empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:18px}
+.drop{max-width:440px;border:1.5px dashed var(--muted);border-radius:12px;padding:22px 22px 18px;background:var(--surface)}
+.drop.over{border-color:var(--v)}
+.drop h3{margin:0 0 6px;font-size:18px;font-weight:600;letter-spacing:-0.01em}
+.drop p{margin:6px 0;color:var(--muted);font-size:14px}
+.drop .legend{display:flex;gap:16px;margin:12px 0 14px;font-size:13.5px}
+.drop .legend span{display:inline-flex;align-items:center;gap:6px}
+.drop .legend i{width:22px;height:4px;border-radius:2px;display:inline-block}
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 18px);transform:translateX(-50%);background:var(--text);color:var(--surface);padding:9px 14px;border-radius:8px;font-size:14px;display:none;max-width:min(92vw,520px);text-align:center;z-index:20;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+
+@media (min-width:900px){
+  .tab{grid-template-columns:minmax(0,1fr) 360px}
+  .stage{height:calc(100dvh - var(--hdr) - var(--tabs) - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 1px);max-height:none}
+  .panel{border-left:1px solid var(--rule);height:calc(100dvh - var(--hdr) - var(--tabs) - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 1px);overflow:auto;padding-bottom:16px}
+  nav.tabs{max-width:520px}
+}
+@media (prefers-reduced-motion:reduce){ .progress i{transition:none} }
+</style>
+</head>
+<body>
+<div class="top">
+  <header>
+    <h1>Guided Upright</h1>
+    <span class="fname" id="fname"></span>
+    <input type="file" id="file" accept="image/jpeg,image/heic,image/heif,.jpg,.jpeg,.heic,.heif" hidden>
+    <button class="btn small" id="openBtn">사진 열기</button>
+  </header>
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tEdit" aria-selected="true" aria-controls="tabEdit"><span class="num">1</span>보정</button>
+    <button role="tab" id="tCrop" aria-selected="false" aria-controls="tabCrop" disabled><span class="num">2</span>크롭 및 결과</button>
+  </nav>
+</div>
+
+<section class="tab" id="tabEdit" role="tabpanel" aria-labelledby="tEdit">
+  <div class="stage" id="srcStage">
+    <canvas class="view" id="srcView" aria-label="원본 사진, 드래그해서 가이드 선을 그립니다"></canvas>
+    <canvas id="loupe" width="124" height="124"></canvas>
+    <div class="empty" id="empty">
+      <div class="drop" id="drop">
+        <h3>아이폰 JPEG 사진을 여세요</h3>
+        <p>건물 모서리처럼 실제로 수직이거나 수평인 선을 따라 드래그하면 그 선이 바로 서도록 원근을 보정합니다.</p>
+        <div class="legend"><span><i style="background:var(--v)"></i>수직 가이드</span><span><i style="background:var(--h)"></i>수평 가이드</span></div>
+        <p>EXIF, Apple MakerNote, ICC, XMP 와 HDR 게인맵을 그대로 옮겨 담고, 변형과 맞지 않게 되는 항목만 갱신합니다. 사진은 이 기기 밖으로 전송되지 않습니다.</p>
+        <p style="margin-top:14px"><button class="btn primary" id="openBtn2">사진 선택</button></p>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="blk">
+      <h2>가이드 <span class="sub" id="cnt">수직 0/2, 수평 0/2</span></h2>
+      <p class="note" style="margin-top:0">선을 그리면 각도로 수직/수평을 자동 판별합니다. 수직 2개로 세로 키스톤을, 수직 2개와 수평 2개로 전체 원근을 맞춥니다. 잘못 판별된 선은 목록에서 전환하세요.</p>
+      <ul class="lines" id="lineList"></ul>
+      <div class="mode" id="modeTxt"></div>
+      <div class="row gap"><button class="btn small" id="clearBtn" disabled>모두 지우기</button></div>
+    </div>
+    <div class="blk">
+      <button class="btn primary block" id="toCrop" disabled>크롭 및 결과로</button>
+    </div>
+    <div class="blk">
+      <details id="infoBox"><summary>파일 분석</summary><div id="info"><p class="note">아직 열린 사진이 없습니다.</p></div></details>
+    </div>
+  </div>
+</section>
+
+<section class="tab" id="tabCrop" role="tabpanel" aria-labelledby="tCrop" hidden>
+  <div class="stage"><canvas class="view" id="cropView" aria-label="보정 결과와 크롭 영역, 모서리와 변을 끌어 조정합니다"></canvas></div>
+  <div class="panel">
+    <div class="blk">
+      <h2>크롭 (원본 비율) <span class="sub" id="cropSize"></span></h2>
+      <div class="row">
+        <label class="chk"><input type="checkbox" id="constrain" checked> 빈 영역 없이 자르기</label>
+        <button class="btn small" id="autoBtn">자동 맞춤</button>
+      </div>
+      <p class="note" id="cropNote">모서리를 끌어 크기를, 안쪽을 끌어 위치를 바꿉니다.</p>
+      <div class="mode" id="modeTxt2"></div>
+    </div>
+    <div class="blk">
+      <button class="btn primary block" id="exportBtn" disabled>보정 적용</button>
+      <div class="progress" aria-hidden="true"><i id="prog"></i></div>
+      <div class="step" id="step" role="status"></div>
+      <div id="report"></div>
+    </div>
+  </div>
+</section>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* ==== CORE START ==== */
+const Core = (() => {
+  const td = new TextDecoder('latin1');
+  const ascii = (u8, s, n) => td.decode(u8.subarray(s, s + n));
+  const startsWith = (u8, off, str) => {
+    for (let i = 0; i < str.length; i++) if (u8[off + i] !== str.charCodeAt(i)) return false;
+    return true;
+  };
+  const concat = (parts) => {
+    let n = 0; for (const p of parts) n += p.length;
+    const out = new Uint8Array(n); let o = 0;
+    for (const p of parts) { out.set(p, o); o += p.length; }
+    return out;
+  };
+  const yieldUI = () => new Promise(r => setTimeout(r, 0));
+
+  /* ---------- JPEG segment parsing ---------- */
+  function parseJpeg(u8) {
+    if (u8[0] !== 0xFF || u8[1] !== 0xD8) throw new Error('JPEG 파일이 아닙니다 (SOI 없음)');
+    const segs = []; let p = 2;
+    while (p < u8.length) {
+      if (u8[p] !== 0xFF) throw new Error('JPEG 세그먼트 구조 오류 (offset ' + p + ')');
+      let q = p; while (u8[q] === 0xFF) q++;
+      const m = u8[q]; q++;
+      if (m === 0xD8 || m === 0x01 || (m >= 0xD0 && m <= 0xD7)) { p = q; continue; }
+      if (m === 0xD9) break;
+      const len = (u8[q] << 8) | u8[q + 1];
+      const seg = { marker: m, start: p, dataStart: q + 2, end: q + len };
+      seg.kind = classify(u8, seg);
+      segs.push(seg);
+      if (m === 0xDA) return { segs, sos: seg };
+      p = q + len;
+    }
+    throw new Error('스캔 데이터 (SOS) 를 찾지 못했습니다');
+  }
+  function classify(u8, s) {
+    const d = s.dataStart;
+    if (s.marker === 0xE1) {
+      if (startsWith(u8, d, 'Exif\0')) return 'exif';
+      if (startsWith(u8, d, 'http://ns.adobe.com/xap/1.0/\0')) return 'xmp';
+      if (startsWith(u8, d, 'http://ns.adobe.com/xmp/extension/\0')) return 'xmpext';
+      return 'app1';
+    }
+    if (s.marker === 0xE2) {
+      if (startsWith(u8, d, 'ICC_PROFILE\0')) return 'icc';
+      if (startsWith(u8, d, 'MPF\0')) return 'mpf';
+      if (startsWith(u8, d, 'urn:iso:std:iso:ts:21496:-1\0')) return 'iso21496';
+      return 'app2';
+    }
+    if (s.marker === 0xE0) return 'app0';
+    if (s.marker >= 0xE3 && s.marker <= 0xEF) return 'app' + (s.marker - 0xE0);
+    if (s.marker === 0xFE) return 'com';
+    if (s.marker === 0xDB) return 'dqt';
+    if (s.marker === 0xC4) return 'dht';
+    if (s.marker >= 0xC0 && s.marker <= 0xCF && s.marker !== 0xC4 && s.marker !== 0xC8 && s.marker !== 0xCC) return 'sof';
+    if (s.marker === 0xDA) return 'sos';
+    if (s.marker === 0xDD) return 'dri';
+    return 'other';
+  }
+  const isMeta = (k) => k === 'exif' || k === 'xmp' || k === 'xmpext' || k === 'app1' || k === 'icc' || k === 'mpf' || k === 'iso21496' || k === 'app2' || k === 'app0' || /^app\d+$/.test(k) || k === 'com';
+
+  function readSOF(u8, segs) {
+    const s = segs.find(x => x.kind === 'sof');
+    if (!s) return null;
+    const d = s.dataStart;
+    const info = { marker: s.marker, precision: u8[d], height: (u8[d + 1] << 8) | u8[d + 2], width: (u8[d + 3] << 8) | u8[d + 4], comps: [] };
+    const n = u8[d + 5];
+    for (let i = 0; i < n; i++) {
+      const o = d + 6 + i * 3;
+      info.comps.push({ id: u8[o], h: u8[o + 1] >> 4, v: u8[o + 1] & 15, tq: u8[o + 2] });
+    }
+    info.baseline = s.marker === 0xC0 || s.marker === 0xC1;
+    info.progressive = s.marker === 0xC2;
+    return info;
+  }
+  function readDQT(u8, segs) {
+    const tables = {};
+    for (const s of segs) {
+      if (s.kind !== 'dqt') continue;
+      let p = s.dataStart;
+      while (p < s.end) {
+        const pq = u8[p] >> 4, tq = u8[p] & 15; p++;
+        const t = new Uint16Array(64);
+        for (let i = 0; i < 64; i++) { t[i] = pq ? ((u8[p] << 8) | u8[p + 1]) : u8[p]; p += pq ? 2 : 1; }
+        tables[tq] = { table: t, precision16: !!pq };
+      }
+    }
+    return tables;
+  }
+
+  /* ---------- TIFF helpers ---------- */
+  function tiffView(u8, base, len) {
+    const le = u8[base] === 0x49;
+    const r16 = (o) => le ? (u8[base + o] | (u8[base + o + 1] << 8)) : ((u8[base + o] << 8) | u8[base + o + 1]);
+    const r32 = (o) => le ? ((u8[base + o] | (u8[base + o + 1] << 8) | (u8[base + o + 2] << 16) | (u8[base + o + 3] << 24)) >>> 0)
+      : (((u8[base + o] << 24) | (u8[base + o + 1] << 16) | (u8[base + o + 2] << 8) | u8[base + o + 3]) >>> 0);
+    const w16 = (o, v) => { if (le) { u8[base + o] = v & 255; u8[base + o + 1] = (v >> 8) & 255; } else { u8[base + o] = (v >> 8) & 255; u8[base + o + 1] = v & 255; } };
+    const w32 = (o, v) => { if (le) { for (let i = 0; i < 4; i++) u8[base + o + i] = (v >>> (8 * i)) & 255; } else { for (let i = 0; i < 4; i++) u8[base + o + i] = (v >>> (24 - 8 * i)) & 255; } };
+    function readIFD(off) {
+      if (!off || off + 2 > len) return null;
+      const n = r16(off); const entries = [];
+      for (let i = 0; i < n; i++) {
+        const e = off + 2 + i * 12;
+        if (e + 12 > len) break;
+        entries.push({ pos: e, tag: r16(e), type: r16(e + 2), count: r32(e + 4), valPos: e + 8 });
+      }
+      const nextPos = off + 2 + n * 12;
+      return { entries, nextPos, next: nextPos + 4 <= len ? r32(nextPos) : 0 };
+    }
+    const typeSize = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 7: 1, 9: 4, 10: 8, 11: 4, 12: 8 };
+    function valueOffset(e) { const sz = (typeSize[e.type] || 1) * e.count; return sz <= 4 ? e.valPos : r32(e.valPos); }
+    function readNum(e) {
+      if (e.type === 3) return r16(e.valPos);
+      if (e.type === 4 || e.type === 9) return r32(e.valPos);
+      return null;
+    }
+    function writeNum(e, v) {
+      if (e.type === 3) { w16(e.valPos, v); return true; }
+      if (e.type === 4 || e.type === 9) { w32(e.valPos, v); return true; }
+      return false;
+    }
+    function readAscii(e) { const o = valueOffset(e); return ascii(u8, base + o, Math.max(0, e.count - 1)).replace(/\0+$/, ''); }
+    function readRational(e, i = 0) { const o = valueOffset(e) + i * 8; const a = r32(o), b = r32(o + 4); return b ? a / b : 0; }
+    return { le, r16, r32, w16, w32, readIFD, valueOffset, readNum, writeNum, readAscii, readRational };
+  }
+
+  /* ---------- EXIF ---------- */
+  function exifSummary(u8, seg) {
+    const base = seg.dataStart + 6, len = seg.end - base;
+    const t = tiffView(u8, base, len);
+    const ifd0 = t.readIFD(t.r32(4));
+    const out = { orientation: 1, hasGPS: false, hasMakerNote: false, makerApple: false, thumb: null, tags: {} };
+    if (!ifd0) return out;
+    let exifPtr = 0;
+    for (const e of ifd0.entries) {
+      if (e.tag === 0x0112) out.orientation = t.readNum(e) || 1;
+      if (e.tag === 0x010F) out.tags.Make = t.readAscii(e);
+      if (e.tag === 0x0110) out.tags.Model = t.readAscii(e);
+      if (e.tag === 0x0131) out.tags.Software = t.readAscii(e);
+      if (e.tag === 0x8769) exifPtr = t.r32(e.valPos);
+      if (e.tag === 0x8825) out.hasGPS = true;
+    }
+    const exif = t.readIFD(exifPtr);
+    if (exif) for (const e of exif.entries) {
+      if (e.tag === 0x9003) out.tags.DateTimeOriginal = t.readAscii(e);
+      if (e.tag === 0xA434) out.tags.LensModel = t.readAscii(e);
+      if (e.tag === 0x8827) out.tags.ISO = t.readNum(e);
+      if (e.tag === 0x829D) out.tags.FNumber = t.readRational(e).toFixed(1);
+      if (e.tag === 0xA002) out.tags.PixelX = t.readNum(e);
+      if (e.tag === 0xA003) out.tags.PixelY = t.readNum(e);
+      if (e.tag === 0x927C) {
+        out.hasMakerNote = true;
+        const mo = base + t.valueOffset(e);
+        if (startsWith(u8, mo, 'Apple iOS')) {
+          out.makerApple = true;
+          out.appleHDR = appleMakerHDR(u8, mo, e.count);
+        }
+      }
+    }
+    if (ifd0.next) {
+      const ifd1 = t.readIFD(ifd0.next);
+      if (ifd1) {
+        let off = 0, l = 0;
+        for (const e of ifd1.entries) { if (e.tag === 0x0201) off = t.readNum(e); if (e.tag === 0x0202) l = t.readNum(e); }
+        if (off && l) out.thumb = { offset: off, length: l };
+      }
+    }
+    return out;
+  }
+  function appleMakerHDR(u8, mo, count) {
+    // "Apple iOS\0" + version(2) + "MM" ; IFD at +14, offsets relative to makernote start
+    try {
+      const t = tiffView(u8, mo + 12, count - 12);
+      const tt = tiffView(u8, mo, count);
+      const n = ((u8[mo + 14] << 8) | u8[mo + 15]);
+      const found = {};
+      for (let i = 0; i < n; i++) {
+        const e = mo + 16 + i * 12;
+        const tag = (u8[e] << 8) | u8[e + 1];
+        if (tag === 33 || tag === 48 || tag === 10 || tag === 11) {
+          const type = (u8[e + 2] << 8) | u8[e + 3];
+          const valOff = ((u8[e + 8] << 24) | (u8[e + 9] << 16) | (u8[e + 10] << 8) | u8[e + 11]) >>> 0;
+          let v = null;
+          if (type === 10 || type === 5) {
+            const p = mo + valOff;
+            let a = ((u8[p] << 24) | (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3]);
+            let b = ((u8[p + 4] << 24) | (u8[p + 5] << 16) | (u8[p + 6] << 8) | u8[p + 7]);
+            if (type === 5) { a >>>= 0; b >>>= 0; }
+            v = b ? a / b : 0;
+          } else if (type === 11) {
+            const dv = new DataView(u8.buffer, u8.byteOffset + e + 8, 4); v = dv.getFloat32(0, false);
+          } else if (type === 9 || type === 4) v = valOff | 0;
+          found[tag] = v;
+        }
+      }
+      void t; void tt;
+      return found;
+    } catch (_) { return {}; }
+  }
+
+  // returns new APP1 Exif segment bytes (full segment incl. marker)
+  function patchExif(u8, seg, opts) {
+    const payload = u8.slice(seg.dataStart, seg.end); // copy
+    const base = 6, len = payload.length - base;
+    const t = tiffView(payload, base, len);
+    const log = [];
+    const ifd0 = t.readIFD(t.r32(4));
+    let exifPtr = 0;
+    for (const e of ifd0.entries) {
+      if (e.tag === 0x0112) { const o = t.readNum(e); if (o !== 1) { t.writeNum(e, 1); log.push('Orientation ' + o + ' → 1'); } }
+      if (e.tag === 0x0100 && t.writeNum(e, opts.width)) log.push('ImageWidth 갱신');
+      if (e.tag === 0x0101 && t.writeNum(e, opts.height)) log.push('ImageLength 갱신');
+      if (e.tag === 0x8769) exifPtr = t.r32(e.valPos);
+    }
+    const exif = t.readIFD(exifPtr);
+    if (exif) for (const e of exif.entries) {
+      if (e.tag === 0xA002 && t.writeNum(e, opts.width)) log.push('PixelXDimension → ' + opts.width);
+      if (e.tag === 0xA003 && t.writeNum(e, opts.height)) log.push('PixelYDimension → ' + opts.height);
+    }
+    let tiff = payload.subarray(base);
+    // thumbnail (IFD1)
+    if (ifd0.next) {
+      const ifd1 = t.readIFD(ifd0.next);
+      let eOff = null, eLen = null;
+      if (ifd1) for (const e of ifd1.entries) { if (e.tag === 0x0201) eOff = e; if (e.tag === 0x0202) eLen = e; }
+      if (eOff && eLen) {
+        const off = t.readNum(eOff), l = t.readNum(eLen);
+        const atEnd = off + l >= len - 16 && off + l <= len;
+        const room = 65533 - 2 - base - off;
+        if (atEnd && opts.thumb && opts.thumb.length <= room) {
+          t.writeNum(eLen, opts.thumb.length);
+          tiff = concat([payload.subarray(base, base + off), opts.thumb]);
+          log.push('EXIF 썸네일 재생성 (' + opts.thumb.length + ' bytes)');
+        } else {
+          t.w32(ifd0.nextPos, 0);
+          tiff = payload.subarray(base);
+          log.push('EXIF 썸네일 연결 해제 (재배치 불가 위치)');
+        }
+      }
+    }
+    const body = concat([payload.subarray(0, base), tiff]);
+    return { bytes: makeSegment(0xE1, body), log };
+  }
+  function makeSegment(marker, body) {
+    const L = body.length + 2;
+    if (L > 0xFFFF) throw new Error('세그먼트 크기 초과 (' + L + ')');
+    return concat([new Uint8Array([0xFF, marker, L >> 8, L & 255]), body]);
+  }
+
+  /* ---------- ICC ---------- */
+  function iccDescription(u8, segs) {
+    const parts = segs.filter(s => s.kind === 'icc').map(s => ({ seq: u8[s.dataStart + 12], data: u8.subarray(s.dataStart + 14, s.end) })).sort((a, b) => a.seq - b.seq);
+    if (!parts.length) return null;
+    const p = concat(parts.map(x => x.data));
+    try {
+      const n = (p[128] << 24 | p[129] << 16 | p[130] << 8 | p[131]) >>> 0;
+      for (let i = 0; i < n; i++) {
+        const o = 132 + i * 12;
+        if (ascii(p, o, 4) !== 'desc') continue;
+        const off = (p[o + 4] << 24 | p[o + 5] << 16 | p[o + 6] << 8 | p[o + 7]) >>> 0;
+        const type = ascii(p, off, 4);
+        if (type === 'desc') { const l = (p[off + 8] << 24 | p[off + 9] << 16 | p[off + 10] << 8 | p[off + 11]) >>> 0; return ascii(p, off + 12, l - 1); }
+        if (type === 'mluc') {
+          const rl = (p[off + 20] << 24 | p[off + 21] << 16 | p[off + 22] << 8 | p[off + 23]) >>> 0;
+          const ro = (p[off + 24] << 24 | p[off + 25] << 16 | p[off + 26] << 8 | p[off + 27]) >>> 0;
+          let s = ''; for (let k = 0; k < rl; k += 2) s += String.fromCharCode((p[off + ro + k] << 8) | p[off + ro + k + 1]);
+          return s;
+        }
+      }
+    } catch (_) {}
+    return '(이름 없음)';
+  }
+
+  /* ---------- XMP ---------- */
+  const XMP_HDR = 'http://ns.adobe.com/xap/1.0/\0';
+  function xmpText(u8, seg) { return new TextDecoder('utf-8').decode(u8.subarray(seg.dataStart + XMP_HDR.length, seg.end)); }
+  function patchXmp(text, opts) {
+    const log = []; let t = text;
+    const rep = (re, fn, label) => { const before = t; t = t.replace(re, fn); if (t !== before) log.push(label); };
+    rep(/(tiff:Orientation\s*=\s*")(\d)(")/g, (m, a, b, c) => a + '1' + c, 'XMP tiff:Orientation → 1');
+    rep(/(<tiff:Orientation>)(\d)(<\/tiff:Orientation>)/g, (m, a, b, c) => a + '1' + c, 'XMP tiff:Orientation → 1');
+    rep(/(exif:PixelXDimension\s*=\s*")(\d+)(")/g, (m, a, b, c) => a + opts.width + c, 'XMP PixelXDimension 갱신');
+    rep(/(exif:PixelYDimension\s*=\s*")(\d+)(")/g, (m, a, b, c) => a + opts.height + c, 'XMP PixelYDimension 갱신');
+    rep(/(<exif:PixelXDimension>)(\d+)(<\/exif:PixelXDimension>)/g, (m, a, b, c) => a + opts.width + c, 'XMP PixelXDimension 갱신');
+    rep(/(<exif:PixelYDimension>)(\d+)(<\/exif:PixelYDimension>)/g, (m, a, b, c) => a + opts.height + c, 'XMP PixelYDimension 갱신');
+    rep(/<mwg-rs:Regions[\s\S]*?<\/mwg-rs:Regions>/g, () => '', 'XMP 얼굴 영역 (mwg-rs:Regions) 제거, 좌표가 변형과 맞지 않음');
+    if (opts.gainMapLength != null) {
+      rep(/<Container:Item\b[^>]*>/g, (tag) => {
+        if (!/Semantic\s*=\s*"GainMap"/.test(tag)) return tag;
+        return tag.replace(/(Item:Length\s*=\s*")(\d+)(")/, (m, a, b, c) => a + opts.gainMapLength + c);
+      }, 'XMP Container GainMap Item:Length 갱신');
+    }
+    return { text: t, log: log.filter(Boolean) };
+  }
+  function xmpSegment(text) {
+    const body = concat([new TextEncoder().encode(XMP_HDR), new TextEncoder().encode(text)]);
+    return makeSegment(0xE1, body);
+  }
+
+  /* ---------- MPF ---------- */
+  function readMPF(u8, seg) {
+    const tiffBase = seg.dataStart + 4;
+    const len = seg.end - tiffBase;
+    const t = tiffView(u8, tiffBase, len);
+    const ifd = t.readIFD(t.r32(4));
+    if (!ifd) return null;
+    const e = ifd.entries.find(x => x.tag === 0xB002);
+    if (!e) return null;
+    const off = t.valueOffset(e); const n = Math.floor(e.count / 16);
+    const entries = [];
+    for (let i = 0; i < n; i++) {
+      const o = off + i * 16;
+      entries.push({ relPos: o, attr: t.r32(o), size: t.r32(o + 4), offset: t.r32(o + 8) });
+    }
+    return { tiffBase, entries, t };
+  }
+  function mpTypeName(attr) {
+    const type = attr & 0xFFFFFF;
+    const m = { 0x030000: '기본 이미지', 0x010001: '대형 썸네일 (VGA)', 0x010002: '대형 썸네일 (Full HD)', 0x020001: '파노라마', 0x020002: '디스패리티', 0x020003: '멀티 앵글', 0x000000: '미정의' };
+    return m[type] || ('0x' + type.toString(16));
+  }
+
+  /* ---------- File analysis ---------- */
+  function analyze(u8) {
+    if (u8.length > 12 && ascii(u8, 4, 4) === 'ftyp') {
+      const brand = ascii(u8, 8, 4);
+      return { format: 'heif', brand };
+    }
+    const j = parseJpeg(u8);
+    const sof = readSOF(u8, j.segs);
+    const r = { format: 'jpeg', segs: j.segs, sof, dqt: readDQT(u8, j.segs), meta: [] };
+    const exifSeg = j.segs.find(s => s.kind === 'exif');
+    r.exif = exifSeg ? exifSummary(u8, exifSeg) : null;
+    r.orientation = r.exif ? r.exif.orientation : 1;
+    r.icc = iccDescription(u8, j.segs);
+    const xmpSeg = j.segs.find(s => s.kind === 'xmp');
+    r.xmp = xmpSeg ? xmpText(u8, xmpSeg) : null;
+    r.iso21496 = j.segs.some(s => s.kind === 'iso21496');
+    r.hdrgm = r.xmp ? /hdrgm:Version/.test(r.xmp) : false;
+    r.secondaries = [];
+    const mpfSeg = j.segs.find(s => s.kind === 'mpf');
+    r.primaryLength = u8.length;
+    if (mpfSeg) {
+      const mpf = readMPF(u8, mpfSeg);
+      if (mpf) {
+        r.mpf = { entries: mpf.entries.map(e => ({ ...e })) };
+        const starts = mpf.entries.slice(1).map(e => mpf.tiffBase + e.offset).filter(x => x > 0 && x <= u8.length);
+        if (starts.length) r.primaryLength = Math.min(...starts);
+        mpf.entries.forEach((e, i) => {
+          if (i === 0) return;
+          const abs = mpf.tiffBase + e.offset;
+          const bytes = u8.subarray(abs, abs + e.size);
+          const sec = { index: i, attr: e.attr, typeName: mpTypeName(e.attr), size: e.size, bytes, role: 'unknown' };
+          try {
+            const sj = parseJpeg(bytes);
+            sec.segs = sj.segs; sec.sof = readSOF(bytes, sj.segs); sec.dqt = readDQT(bytes, sj.segs);
+            const sx = sj.segs.find(s => s.kind === 'xmp');
+            sec.xmp = sx ? xmpText(bytes, sx) : '';
+            sec.iso21496 = sj.segs.some(s => s.kind === 'iso21496');
+            if (/urn:com:apple:photo:2020:aux:hdrgainmap/.test(sec.xmp)) sec.role = 'apple-gainmap';
+            else if (/hdrgm:Version|hdrgm:GainMapMax/.test(sec.xmp) || sec.iso21496) sec.role = 'iso-gainmap';
+            else if (/aux:depth|aux:disparity|DepthData/i.test(sec.xmp)) sec.role = 'depth';
+            else if (/aux:portraiteffectsmatte|aux:semanticsegmentation/i.test(sec.xmp)) sec.role = 'matte';
+            else sec.role = 'image';
+          } catch (err) { sec.role = 'invalid'; sec.error = String(err.message || err); }
+          r.secondaries.push(sec);
+        });
+      }
+    }
+    r.gainmap = r.secondaries.find(s => s.role === 'apple-gainmap' || s.role === 'iso-gainmap') || null;
+    return r;
+  }
+
+  // JPEG stream with no APPn (for decoding without color management or auto-rotation)
+  function strippedForDecode(u8, primaryLength) {
+    const src = u8.subarray(0, primaryLength);
+    const j = parseJpeg(src);
+    const parts = [new Uint8Array([0xFF, 0xD8])];
+    for (const s of j.segs) { if (s.kind === 'sos') break; if (!isMeta(s.kind)) parts.push(src.subarray(s.start, s.end)); }
+    parts.push(src.subarray(j.sos.start));
+    return concat(parts);
+  }
+
+  /* ---------- Orientation ---------- */
+  function orientedSize(w, h, o) { return o >= 5 ? [h, w] : [w, h]; }
+  // map raw (x,y) to oriented index
+  function orientMapper(rw, rh, o) {
+    switch (o) {
+      case 2: return (x, y) => [rw - 1 - x, y];
+      case 3: return (x, y) => [rw - 1 - x, rh - 1 - y];
+      case 4: return (x, y) => [x, rh - 1 - y];
+      case 5: return (x, y) => [y, x];
+      case 6: return (x, y) => [rh - 1 - y, x];
+      case 7: return (x, y) => [rh - 1 - y, rw - 1 - x];
+      case 8: return (x, y) => [y, rw - 1 - x];
+      default: return (x, y) => [x, y];
+    }
+  }
+  // feed raw RGBA tile into oriented buffer (channels 1 or 3)
+  function writeTile(dst, ow, ch, rgba, tx, ty, tw, th, rw, rh, o) {
+    const map = orientMapper(rw, rh, o);
+    for (let y = 0; y < th; y++) {
+      for (let x = 0; x < tw; x++) {
+        const si = (y * tw + x) * 4;
+        const [X, Y] = map(tx + x, ty + y);
+        const di = (Y * ow + X) * ch;
+        dst[di] = rgba[si];
+        if (ch === 3) { dst[di + 1] = rgba[si + 1]; dst[di + 2] = rgba[si + 2]; }
+      }
+    }
+  }
+
+  /* ---------- Linear algebra / homography ---------- */
+  function solve(A, b) {
+    const n = b.length; const M = A.map((r, i) => [...r, b[i]]);
+    for (let c = 0; c < n; c++) {
+      let piv = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+      if (Math.abs(M[piv][c]) < 1e-12) return null;
+      [M[c], M[piv]] = [M[piv], M[c]];
+      for (let r = 0; r < n; r++) {
+        if (r === c) continue;
+        const f = M[r][c] / M[c][c];
+        for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+      }
+    }
+    return M.map((r, i) => r[n] / r[i]);
+  }
+  function homFrom4(src, dst) {
+    const A = [], b = [];
+    for (let i = 0; i < 4; i++) {
+      const [x, y] = src[i], [u, v] = dst[i];
+      A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+      A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+    }
+    const h = solve(A, b); if (!h) return null;
+    return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+  }
+  const I3 = () => [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  function mul(A, B) {
+    const C = new Array(9);
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) C[r * 3 + c] = A[r * 3] * B[c] + A[r * 3 + 1] * B[3 + c] + A[r * 3 + 2] * B[6 + c];
+    return C;
+  }
+  function inv(m) {
+    const [a, b, c, d, e, f, g, h, i] = m;
+    const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
+    const det = a * A + b * B + c * C;
+    if (Math.abs(det) < 1e-15) return null;
+    return [A / det, -(b * i - c * h) / det, (b * f - c * e) / det, B / det, (a * i - c * g) / det, -(a * f - c * d) / det, C / det, -(a * h - b * g) / det, (a * e - b * d) / det];
+  }
+  function apply(H, x, y) { const w = H[6] * x + H[7] * y + H[8]; return [(H[0] * x + H[1] * y + H[2]) / w, (H[3] * x + H[4] * y + H[5]) / w]; }
+  const T = (tx, ty) => [1, 0, tx, 0, 1, ty, 0, 0, 1];
+  const S = (sx, sy) => [sx, 0, 0, 0, sy, 0, 0, 0, 1];
+  const R = (a) => [Math.cos(a), -Math.sin(a), 0, Math.sin(a), Math.cos(a), 0, 0, 0, 1];
+  const about = (M, cx, cy) => mul(T(cx, cy), mul(M, T(-cx, -cy)));
+
+  function lineXAtY(L, y) { const [x1, y1, x2, y2] = L; return x1 + (x2 - x1) * (y - y1) / (y2 - y1); }
+  function lineYAtX(L, x) { const [x1, y1, x2, y2] = L; return y1 + (y2 - y1) * (x - x1) / (x2 - x1); }
+  function intersect(A, B) {
+    const [x1, y1, x2, y2] = A, [x3, y3, x4, y4] = B;
+    const d = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if (Math.abs(d) < 1e-9) return null;
+    const a = x1 * y2 - y1 * x2, b = x3 * y4 - y3 * x4;
+    return [(a * (x3 - x4) - (x1 - x2) * b) / d, (a * (y3 - y4) - (y1 - y2) * b) / d];
+  }
+  const isVertical = (L) => Math.abs(L[3] - L[1]) > Math.abs(L[2] - L[0]);
+
+  // lines in image pixel coords [x1,y1,x2,y2]; returns 3x3 correction (before framing)
+  function uprightMatrix(lines, W, H, aspect = 0) {
+    const typ = (l) => l.t || (isVertical(l) ? 'v' : 'h');
+    const V = lines.filter(l => typ(l) === 'v').slice(0, 2);
+    const Hz = lines.filter(l => typ(l) === 'h').slice(0, 2);
+    const cx = W / 2, cy = H / 2;
+    let M = I3(); let mode = '보정 없음';
+    if (V.length >= 2 && Hz.length >= 2) {
+      const c11 = intersect(V[0], Hz[0]), c12 = intersect(V[0], Hz[1]), c21 = intersect(V[1], Hz[0]), c22 = intersect(V[1], Hz[1]);
+      if (c11 && c12 && c21 && c22) {
+        const xa = (c11[0] + c12[0]) / 2, xb = (c21[0] + c22[0]) / 2, ya = (c11[1] + c21[1]) / 2, yb = (c12[1] + c22[1]) / 2;
+        const h = homFrom4([c11, c12, c21, c22], [[xa, ya], [xa, yb], [xb, ya], [xb, yb]]);
+        if (h) { M = h; mode = '수직 2 + 수평 2, 전체 원근 보정'; }
+      }
+    } else if (V.length >= 2) {
+      const ys = [V[0][1], V[0][3], V[1][1], V[1][3]];
+      const yt = Math.min(...ys), yb = Math.max(...ys), ym = (yt + yb) / 2;
+      const xa = lineXAtY(V[0], ym), xb = lineXAtY(V[1], ym);
+      const h = homFrom4([[lineXAtY(V[0], yt), yt], [lineXAtY(V[0], yb), yb], [lineXAtY(V[1], yt), yt], [lineXAtY(V[1], yb), yb]], [[xa, yt], [xa, yb], [xb, yt], [xb, yb]]);
+      if (h) { M = h; mode = '수직 2, 세로 키스톤 보정'; }
+      if (Hz.length === 1) {
+        const [a1, b1] = apply(M, Hz[0][0], Hz[0][1]), [a2, b2] = apply(M, Hz[0][2], Hz[0][3]);
+        const k = (b2 - b1) / (a2 - a1);
+        M = mul([1, 0, 0, -k, 1, k * cx, 0, 0, 1], M); mode += ' + 수평 1 기울기';
+      }
+    } else if (Hz.length >= 2) {
+      const xs = [Hz[0][0], Hz[0][2], Hz[1][0], Hz[1][2]];
+      const xl = Math.min(...xs), xr = Math.max(...xs), xm = (xl + xr) / 2;
+      const ya = lineYAtX(Hz[0], xm), yb = lineYAtX(Hz[1], xm);
+      const h = homFrom4([[xl, lineYAtX(Hz[0], xl)], [xr, lineYAtX(Hz[0], xr)], [xl, lineYAtX(Hz[1], xl)], [xr, lineYAtX(Hz[1], xr)]], [[xl, ya], [xr, ya], [xl, yb], [xr, yb]]);
+      if (h) { M = h; mode = '수평 2, 가로 키스톤 보정'; }
+      if (V.length === 1) {
+        const [a1, b1] = apply(M, V[0][0], V[0][1]), [a2, b2] = apply(M, V[0][2], V[0][3]);
+        const m = (a2 - a1) / (b2 - b1);
+        M = mul([1, -m, m * cy, 0, 1, 0, 0, 0, 1], M); mode += ' + 수직 1 기울기';
+      }
+    } else if (V.length === 1 && Hz.length === 1) {
+      let [dvx, dvy] = [V[0][2] - V[0][0], V[0][3] - V[0][1]]; if (dvy < 0) { dvx = -dvx; dvy = -dvy; }
+      let [dhx, dhy] = [Hz[0][2] - Hz[0][0], Hz[0][3] - Hz[0][1]]; if (dhx < 0) { dhx = -dhx; dhy = -dhy; }
+      const nv = Math.hypot(dvx, dvy), nh = Math.hypot(dhx, dhy);
+      const Mm = [dhx / nh, dvx / nv, 0, dhy / nh, dvy / nv, 0, 0, 0, 1];
+      const det = Math.abs(Mm[0] * Mm[4] - Mm[1] * Mm[3]);
+      const A = inv(Mm);
+      if (A && det > 0.05) { const s = Math.sqrt(det); M = about(mul(S(s, s), A), cx, cy); mode = '수직 1 + 수평 1, 기울기/전단 보정'; }
+    } else if (V.length === 1) {
+      let [dx, dy] = [V[0][2] - V[0][0], V[0][3] - V[0][1]]; if (dy < 0) { dx = -dx; dy = -dy; }
+      M = about(R(Math.PI / 2 - Math.atan2(dy, dx)), cx, cy); mode = '수직 1, 회전';
+    } else if (Hz.length === 1) {
+      let [dx, dy] = [Hz[0][2] - Hz[0][0], Hz[0][3] - Hz[0][1]]; if (dx < 0) { dx = -dx; dy = -dy; }
+      M = about(R(-Math.atan2(dy, dx)), cx, cy); mode = '수평 1, 회전';
+    }
+    if (aspect) { const k = Math.pow(2, aspect / 100); M = mul(about(S(1 / Math.sqrt(k), Math.sqrt(k)), cx, cy), M); }
+    return { M, mode };
+  }
+
+  function pointInConvex(poly, x, y) {
+    let sign = 0;
+    for (let i = 0; i < poly.length; i++) {
+      const [ax, ay] = poly[i], [bx, by] = poly[(i + 1) % poly.length];
+      const c = (bx - ax) * (y - ay) - (by - ay) * (x - ax);
+      if (Math.abs(c) < 1e-9) continue;
+      const s = Math.sign(c); if (!sign) sign = s; else if (s !== sign) return false;
+    }
+    return true;
+  }
+  // Framing: returns final matrix F (src px -> out px) and output size
+  function frame(M, W, H, mode) {
+    const cx = W / 2, cy = H / 2;
+    // normalize local scale at center to 1
+    const eps = 1;
+    const p0 = apply(M, cx, cy), px = apply(M, cx + eps, cy), py = apply(M, cx, cy + eps);
+    const det = Math.abs((px[0] - p0[0]) * (py[1] - p0[1]) - (px[1] - p0[1]) * (py[0] - p0[0]));
+    const s = det > 1e-9 ? 1 / Math.sqrt(det) : 1;
+    let F = mul(about(S(s, s), p0[0], p0[1]), M);
+    const quad = [[0, 0], [W, 0], [W, H], [0, H]].map(([x, y]) => apply(F, x, y));
+    // orientation of quad must be convex & non-flipped
+    const valid = quad.every(p => isFinite(p[0]) && isFinite(p[1]));
+    if (!valid) return null;
+    let ow, oh, ox, oy;
+    if (mode === 'fill') {
+      const xs = quad.map(p => p[0]), ys = quad.map(p => p[1]);
+      ox = Math.min(...xs); oy = Math.min(...ys);
+      ow = Math.max(...xs) - ox; oh = Math.max(...ys) - oy;
+      const cap = 1.5 * W * H;
+      if (ow * oh > cap) { const k = Math.sqrt(cap / (ow * oh)); F = mul(S(k, k), F); ox *= k; oy *= k; ow *= k; oh *= k; }
+    } else {
+      const ar = W / H;
+      const fits = (c, t) => {
+        const hw = t * ar / 2, hh = t / 2;
+        return pointInConvex(quad, c[0] - hw, c[1] - hh) && pointInConvex(quad, c[0] + hw, c[1] - hh) && pointInConvex(quad, c[0] + hw, c[1] + hh) && pointInConvex(quad, c[0] - hw, c[1] + hh);
+      };
+      const best = (c) => {
+        if (!pointInConvex(quad, c[0], c[1])) return 0;
+        let lo = 0, hi = 4 * Math.max(W, H);
+        for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (fits(c, m)) lo = m; else hi = m; }
+        return lo;
+      };
+      let c = [...apply(F, cx, cy)], t = best(c), step = Math.max(W, H) / 8;
+      while (step > 0.5) {
+        let improved = false;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+          const c2 = [c[0] + dx * step, c[1] + dy * step]; const t2 = best(c2);
+          if (t2 > t + 1e-6) { c = c2; t = t2; improved = true; }
+        }
+        if (!improved) step /= 2;
+      }
+      oh = t; ow = t * ar; ox = c[0] - ow / 2; oy = c[1] - oh / 2;
+      if (ow < 8 || oh < 8) return null;
+    }
+    F = mul(T(-ox, -oy), F);
+    return { F, width: Math.max(1, Math.round(ow)), height: Math.max(1, Math.round(oh)), quad: quad.map(([x, y]) => [x - ox, y - oy]) };
+  }
+
+  /* ---------- Free crop framing ---------- */
+  // base: corrected image placed in its own bounding box (all pixels kept)
+  function frameBase(M, W, H) {
+    const cx = W / 2, cy = H / 2;
+    const p0 = apply(M, cx, cy), px = apply(M, cx + 1, cy), py = apply(M, cx, cy + 1);
+    const det = Math.abs((px[0] - p0[0]) * (py[1] - p0[1]) - (px[1] - p0[1]) * (py[0] - p0[0]));
+    const s = det > 1e-9 ? 1 / Math.sqrt(det) : 1;
+    let F = mul(about(S(s, s), p0[0], p0[1]), M);
+    let quad = [[0, 0], [W, 0], [W, H], [0, H]].map(([x, y]) => apply(F, x, y));
+    if (!quad.every(p => isFinite(p[0]) && isFinite(p[1]))) return null;
+    // the corrected corners must stay in front of the vanishing line
+    if (![[0, 0], [W, 0], [W, H], [0, H]].every(([x, y]) => (F[6] * x + F[7] * y + F[8]) > 0)) return null;
+    let xs = quad.map(p => p[0]), ys = quad.map(p => p[1]);
+    let ox = Math.min(...xs), oy = Math.min(...ys), bw = Math.max(...xs) - ox, bh = Math.max(...ys) - oy;
+    const cap = 1.5 * W * H;
+    if (bw * bh > cap) { const k = Math.sqrt(cap / (bw * bh)); F = mul(S(k, k), F); ox *= k; oy *= k; bw *= k; bh *= k; }
+    F = mul(T(-ox, -oy), F);
+    quad = [[0, 0], [W, 0], [W, H], [0, H]].map(([x, y]) => apply(F, x, y));
+    return { F, bw, bh, quad };
+  }
+  function rectInQuad(quad, r) {
+    const e = 1e-6;
+    return pointInConvex(quad, r.x + e, r.y + e) && pointInConvex(quad, r.x + r.w - e, r.y + e) && pointInConvex(quad, r.x + r.w - e, r.y + r.h - e) && pointInConvex(quad, r.x + e, r.y + r.h - e);
+  }
+  function autoCrop(quad, ar) {
+    const fits = (c, t) => rectInQuad(quad, { x: c[0] - t * ar / 2, y: c[1] - t / 2, w: t * ar, h: t });
+    const xs = quad.map(p => p[0]), ys = quad.map(p => p[1]);
+    const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    const best = (c) => {
+      if (!pointInConvex(quad, c[0], c[1])) return 0;
+      let lo = 0, hi = 2 * span;
+      for (let i = 0; i < 36; i++) { const m = (lo + hi) / 2; if (fits(c, m)) lo = m; else hi = m; }
+      return lo;
+    };
+    let c = [xs.reduce((a, b) => a + b) / 4, ys.reduce((a, b) => a + b) / 4], t = best(c), step = span / 8;
+    while (step > 0.5) {
+      let improved = false;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const c2 = [c[0] + dx * step, c[1] + dy * step]; const t2 = best(c2);
+        if (t2 > t + 1e-6) { c = c2; t = t2; improved = true; }
+      }
+      if (!improved) step /= 2;
+    }
+    if (t < 4) return null;
+    return { x: c[0] - t * ar / 2, y: c[1] - t / 2, w: t * ar, h: t };
+  }
+  // free ratio: largest-area rectangle over a sweep of aspect ratios
+  function autoCropFree(quad) {
+    let best = null;
+    for (let i = 0; i <= 24; i++) {
+      const ar = Math.exp(Math.log(0.25) + (Math.log(4) - Math.log(0.25)) * i / 24);
+      const r = autoCrop(quad, ar);
+      if (r && (!best || r.w * r.h > best.w * best.h)) best = r;
+    }
+    return best;
+  }
+  function finalize(base, r) {
+    return { F: mul(T(-r.x, -r.y), base.F), width: Math.max(1, Math.round(r.w)), height: Math.max(1, Math.round(r.h)) };
+  }
+  // scale a full-res frame matrix for a map of different resolution
+  function scaledMatrix(F, sx, sy) { return mul(S(sx, sy), mul(F, S(1 / sx, 1 / sy))); }
+
+  /* ---------- Warp (inverse mapping, bilinear) ---------- */
+  async function warp(src, sw, sh, ch, F, ow, oh, fill, onProgress) {
+    const Hi = inv(F);
+    const out = new Uint8Array(ow * oh * ch);
+    const [a, b, c, d, e, f, g, h, i] = Hi;
+    const chunk = Math.max(1, Math.floor(400000 / ow));
+    for (let v = 0; v < oh; v++) {
+      const yv = v + 0.5;
+      let X = a * 0.5 + b * yv + c, Y = d * 0.5 + e * yv + f, W = g * 0.5 + h * yv + i;
+      let o = v * ow * ch;
+      for (let u = 0; u < ow; u++) {
+        const sx = X / W - 0.5, sy = Y / W - 0.5;
+        X += a; Y += d; W += g;
+        if (sx < -0.5 || sy < -0.5 || sx > sw - 0.5 || sy > sh - 0.5) {
+          for (let k = 0; k < ch; k++) out[o++] = fill;
+          continue;
+        }
+        let x0 = Math.floor(sx), y0 = Math.floor(sy);
+        let fx = sx - x0, fy = sy - y0;
+        let x1 = x0 + 1, y1 = y0 + 1;
+        if (x0 < 0) { x0 = 0; fx = 0; } if (y0 < 0) { y0 = 0; fy = 0; }
+        if (x1 > sw - 1) x1 = sw - 1; if (y1 > sh - 1) y1 = sh - 1;
+        const p00 = (y0 * sw + x0) * ch, p10 = (y0 * sw + x1) * ch, p01 = (y1 * sw + x0) * ch, p11 = (y1 * sw + x1) * ch;
+        const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
+        for (let k = 0; k < ch; k++) out[o++] = src[p00 + k] * w00 + src[p10 + k] * w10 + src[p01 + k] * w01 + src[p11 + k] * w11 + 0.5;
+      }
+      if (v % chunk === 0) { onProgress && onProgress(v / oh); await yieldUI(); }
+    }
+    onProgress && onProgress(1);
+    return out;
+  }
+
+  function downscale(src, sw, sh, ch, dw, dh) {
+    const out = new Uint8Array(dw * dh * ch);
+    const rx = sw / dw, ry = sh / dh;
+    for (let y = 0; y < dh; y++) {
+      const y0 = Math.floor(y * ry), y1 = Math.max(y0 + 1, Math.floor((y + 1) * ry));
+      for (let x = 0; x < dw; x++) {
+        const x0 = Math.floor(x * rx), x1 = Math.max(x0 + 1, Math.floor((x + 1) * rx));
+        const acc = [0, 0, 0]; let n = 0;
+        for (let yy = y0; yy < y1 && yy < sh; yy += 1) for (let xx = x0; xx < x1 && xx < sw; xx += 1) {
+          const p = (yy * sw + xx) * ch; for (let k = 0; k < ch; k++) acc[k] += src[p + k]; n++;
+        }
+        const o = (y * dw + x) * ch; for (let k = 0; k < ch; k++) out[o + k] = n ? Math.round(acc[k] / n) : 0;
+      }
+    }
+    return out;
+  }
+
+  /* ---------- Baseline JPEG encoder (gray / YCbCr 4:4:4 / 4:2:0) ---------- */
+  const ZZ = [0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63];
+  const STD_LQ = [16, 11, 10, 16, 24, 40, 51, 61, 12, 12, 14, 19, 26, 58, 60, 55, 14, 13, 16, 24, 40, 57, 69, 56, 14, 17, 22, 29, 51, 87, 80, 62, 18, 22, 37, 56, 68, 109, 103, 77, 24, 35, 55, 64, 81, 104, 113, 92, 49, 64, 78, 87, 103, 121, 120, 101, 72, 92, 95, 98, 112, 100, 103, 99];
+  const STD_CQ = [17, 18, 24, 47, 99, 99, 99, 99, 18, 21, 26, 66, 99, 99, 99, 99, 24, 26, 56, 99, 99, 99, 99, 99, 47, 66, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99];
+  function stdQ(base, quality) {
+    const q = Math.max(1, Math.min(100, quality));
+    const sc = q < 50 ? 5000 / q : 200 - 2 * q;
+    const t = new Uint16Array(64);
+    for (let i = 0; i < 64; i++) t[i] = Math.max(1, Math.min(255, Math.floor((base[ZZ[i]] * sc + 50) / 100)));
+    return t; // zigzag order
+  }
+  const DC_L_BITS = [0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0];
+  const DC_C_BITS = [0, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0];
+  const DC_VALS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  const AC_L_BITS = [0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 0x7d];
+  const AC_L_VALS = [0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07, 0x22, 0x71, 0x14, 0x32, 0x81, 0x91, 0xa1, 0x08, 0x23, 0x42, 0xb1, 0xc1, 0x15, 0x52, 0xd1, 0xf0, 0x24, 0x33, 0x62, 0x72, 0x82, 0x09, 0x0a, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa];
+  const AC_C_BITS = [0, 2, 1, 2, 4, 4, 3, 4, 7, 5, 4, 4, 0, 1, 2, 0x77];
+  const AC_C_VALS = [0x00, 0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21, 0x31, 0x06, 0x12, 0x41, 0x51, 0x07, 0x61, 0x71, 0x13, 0x22, 0x32, 0x81, 0x08, 0x14, 0x42, 0x91, 0xa1, 0xb1, 0xc1, 0x09, 0x23, 0x33, 0x52, 0xf0, 0x15, 0x62, 0x72, 0xd1, 0x0a, 0x16, 0x24, 0x34, 0xe1, 0x25, 0xf1, 0x17, 0x18, 0x19, 0x1a, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa];
+  function buildHuff(bits, vals) {
+    const codes = new Uint16Array(256), lens = new Uint8Array(256);
+    let code = 0, k = 0;
+    for (let l = 1; l <= 16; l++) { for (let i = 0; i < bits[l - 1]; i++) { codes[vals[k]] = code; lens[vals[k]] = l; code++; k++; } code <<= 1; }
+    return { codes, lens };
+  }
+  const HT = { dcL: buildHuff(DC_L_BITS, DC_VALS), acL: buildHuff(AC_L_BITS, AC_L_VALS), dcC: buildHuff(DC_C_BITS, DC_VALS), acC: buildHuff(AC_C_BITS, AC_C_VALS) };
+  const DCT = (() => { const m = new Float64Array(64); for (let u = 0; u < 8; u++) for (let x = 0; x < 8; x++) m[u * 8 + x] = (u === 0 ? Math.SQRT1_2 : 1) / 2 * Math.cos((2 * x + 1) * u * Math.PI / 16); return m; })();
+
+  class BitWriter {
+    constructor(cap) { this.buf = new Uint8Array(cap); this.n = 0; this.acc = 0; this.cnt = 0; }
+    byte(b) { if (this.n >= this.buf.length) { const nb = new Uint8Array(this.buf.length * 2); nb.set(this.buf); this.buf = nb; } this.buf[this.n++] = b; }
+    bits(code, len) {
+      for (let i = len - 1; i >= 0; i--) {
+        this.acc = (this.acc << 1) | ((code >> i) & 1); this.cnt++;
+        if (this.cnt === 8) { this.byte(this.acc); if (this.acc === 0xFF) this.byte(0); this.acc = 0; this.cnt = 0; }
+      }
+    }
+    flush() { if (this.cnt) { this.bits((1 << (8 - this.cnt)) - 1, 8 - this.cnt); } }
+  }
+
+  async function encodeJpeg(opt) {
+    const { width: w, height: h, data, channels, onProgress } = opt;
+    const sub = channels === 3 ? (opt.subsampling || '420') : '444';
+    const qL = opt.qLuma || stdQ(STD_LQ, opt.quality || 92);
+    const qC = opt.qChroma || stdQ(STD_CQ, opt.quality || 92);
+    const hdr = [];
+    const push = (...b) => hdr.push(...b);
+    push(0xFF, 0xD8);
+    // DQT
+    const dqt = (id, t) => { push(0xFF, 0xDB, 0, 67, id); for (let i = 0; i < 64; i++) push(Math.min(255, t[i])); };
+    dqt(0, qL); if (channels === 3) dqt(1, qC);
+    // SOF0
+    const hs = sub === '420' ? 0x22 : 0x11;
+    if (channels === 3) push(0xFF, 0xC0, 0, 17, 8, h >> 8, h & 255, w >> 8, w & 255, 3, 1, hs, 0, 2, 0x11, 1, 3, 0x11, 1);
+    else push(0xFF, 0xC0, 0, 11, 8, h >> 8, h & 255, w >> 8, w & 255, 1, 1, 0x11, 0);
+    // DHT
+    const dht = (cls, bits, vals) => { const L = 3 + 16 + vals.length; push(0xFF, 0xC4, L >> 8, L & 255, cls, ...bits, ...vals); };
+    dht(0x00, DC_L_BITS, DC_VALS); dht(0x10, AC_L_BITS, AC_L_VALS);
+    if (channels === 3) { dht(0x01, DC_C_BITS, DC_VALS); dht(0x11, AC_C_BITS, AC_C_VALS); }
+    // SOS
+    if (channels === 3) push(0xFF, 0xDA, 0, 12, 3, 1, 0x00, 2, 0x11, 3, 0x11, 0, 63, 0);
+    else push(0xFF, 0xDA, 0, 8, 1, 1, 0x00, 0, 63, 0);
+
+    const bw = new BitWriter(Math.max(1 << 16, (w * h) >> 1));
+    const blk = new Float64Array(64), tmp = new Float64Array(64), coef = new Int32Array(64);
+    const qLf = new Float64Array(64), qCf = new Float64Array(64);
+    for (let i = 0; i < 64; i++) { qLf[i] = qL[i]; qCf[i] = qC[i]; }
+    const pred = [0, 0, 0];
+    const encBlock = (q, dcT, acT, comp) => {
+      // 2D DCT: tmp = M * blk ; F = tmp * M^T
+      for (let u = 0; u < 8; u++) for (let x = 0; x < 8; x++) { let s = 0; for (let y = 0; y < 8; y++) s += DCT[u * 8 + y] * blk[y * 8 + x]; tmp[u * 8 + x] = s; }
+      for (let i = 0; i < 64; i++) {
+        const n = ZZ[i], v = n >> 3, u = n & 7;
+        let s = 0; for (let x = 0; x < 8; x++) s += tmp[v * 8 + x] * DCT[u * 8 + x];
+        coef[i] = Math.round(s / q[i]);
+      }
+      // DC
+      const diff = coef[0] - pred[comp]; pred[comp] = coef[0];
+      let ad = Math.abs(diff), nb = 0; while (ad) { nb++; ad >>= 1; }
+      bw.bits(dcT.codes[nb], dcT.lens[nb]);
+      if (nb) bw.bits(diff < 0 ? diff + (1 << nb) - 1 : diff, nb);
+      // AC
+      let run = 0;
+      for (let i = 1; i < 64; i++) {
+        const c = coef[i];
+        if (c === 0) { run++; continue; }
+        while (run > 15) { bw.bits(acT.codes[0xF0], acT.lens[0xF0]); run -= 16; }
+        let a = Math.abs(c), s = 0; while (a) { s++; a >>= 1; }
+        const sym = (run << 4) | s;
+        bw.bits(acT.codes[sym], acT.lens[sym]);
+        bw.bits(c < 0 ? c + (1 << s) - 1 : c, s);
+        run = 0;
+      }
+      if (run) bw.bits(acT.codes[0], acT.lens[0]);
+    };
+    const px = (x, y) => { if (x >= w) x = w - 1; if (y >= h) y = h - 1; return (y * w + x) * channels; };
+    const mcu = sub === '420' ? 16 : 8;
+    const mx = Math.ceil(w / mcu), my = Math.ceil(h / mcu);
+    for (let by = 0; by < my; by++) {
+      for (let bx = 0; bx < mx; bx++) {
+        const X0 = bx * mcu, Y0 = by * mcu;
+        if (channels === 1) {
+          for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) blk[y * 8 + x] = data[px(X0 + x, Y0 + y)] - 128;
+          encBlock(qLf, HT.dcL, HT.acL, 0);
+          continue;
+        }
+        const nY = sub === '420' ? 2 : 1;
+        for (let sy = 0; sy < nY; sy++) for (let sx = 0; sx < nY; sx++) {
+          for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+            const p = px(X0 + sx * 8 + x, Y0 + sy * 8 + y);
+            blk[y * 8 + x] = 0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2] - 128;
+          }
+          encBlock(qLf, HT.dcL, HT.acL, 0);
+        }
+        for (let comp = 1; comp <= 2; comp++) {
+          for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+            let r = 0, g = 0, b = 0;
+            if (sub === '420') {
+              for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) { const p = px(X0 + x * 2 + dx, Y0 + y * 2 + dy); r += data[p]; g += data[p + 1]; b += data[p + 2]; }
+              r /= 4; g /= 4; b /= 4;
+            } else { const p = px(X0 + x, Y0 + y); r = data[p]; g = data[p + 1]; b = data[p + 2]; }
+            blk[y * 8 + x] = comp === 1 ? (-0.168736 * r - 0.331264 * g + 0.5 * b) : (0.5 * r - 0.418688 * g - 0.081312 * b);
+          }
+          encBlock(qCf, HT.dcC, HT.acC, comp);
+        }
+      }
+      if (by % 4 === 0) { onProgress && onProgress(by / my); await yieldUI(); }
+    }
+    bw.flush();
+    onProgress && onProgress(1);
+    return concat([new Uint8Array(hdr), bw.buf.subarray(0, bw.n), new Uint8Array([0xFF, 0xD9])]);
+  }
+
+  // Choose encoder params matching the original stream
+  function encoderParams(info) {
+    const sof = info.sof; const p = { channels: sof && sof.comps.length === 1 ? 1 : 3, subsampling: '444', qLuma: null, qChroma: null, note: '' };
+    if (sof && sof.comps.length === 3) {
+      const c0 = sof.comps[0];
+      p.subsampling = (c0.h === 2 && c0.v === 2) ? '420' : '444';
+      if (c0.h === 2 && c0.v === 1) p.note = '원본 4:2:2 는 4:4:4 로 인코딩';
+    }
+    if (sof && info.dqt) {
+      const tl = info.dqt[sof.comps[0].tq];
+      if (tl && !tl.precision16) p.qLuma = tl.table;
+      if (sof.comps.length === 3) { const tc = info.dqt[sof.comps[1].tq]; if (tc && !tc.precision16) p.qChroma = tc.table; }
+    }
+    return p;
+  }
+
+  // Replace image data of a JPEG (header meta from `orig`, image stream from `enc`)
+  function rebuildSingle(origU8, origSegs, enc, replace) {
+    const ej = parseJpeg(enc);
+    const parts = [new Uint8Array([0xFF, 0xD8])];
+    for (const s of origSegs) {
+      if (s.kind === 'sos') break;
+      if (!isMeta(s.kind)) continue;
+      if (replace && replace.has(s)) { const r = replace.get(s); if (r) parts.push(r); continue; }
+      parts.push(origU8.subarray(s.start, s.end));
+    }
+    for (const s of ej.segs) { if (s.kind === 'sos') break; if (!isMeta(s.kind)) parts.push(enc.subarray(s.start, s.end)); }
+    parts.push(enc.subarray(ej.sos.start));
+    return concat(parts);
+  }
+
+  // Assemble final file: primary (with patched MPF) + secondaries
+  function assemble(origU8, info, primaryEnc, replace, secOut) {
+    let primary = rebuildSingle(origU8, info.segs, primaryEnc, replace);
+    const log = [];
+    if (!info.mpf || !secOut.length) return { bytes: primary, log };
+    const pj = parseJpeg(primary);
+    const mseg = pj.segs.find(s => s.kind === 'mpf');
+    const mpf = readMPF(primary, mseg);
+    const total = primary.length;
+    mpf.t.w32(mpf.entries[0].relPos + 4, total);
+    let cursor = total;
+    secOut.forEach((s, k) => {
+      const e = mpf.entries[k + 1];
+      mpf.t.w32(e.relPos + 4, s.length);
+      mpf.t.w32(e.relPos + 8, cursor - mpf.tiffBase);
+      cursor += s.length;
+    });
+    log.push('MPF 인덱스 갱신 (이미지 ' + (secOut.length + 1) + '개 오프셋/크기)');
+    return { bytes: concat([primary, ...secOut]), log };
+  }
+
+  return { parseJpeg, readSOF, readDQT, analyze, strippedForDecode, orientedSize, writeTile, orientMapper,
+    uprightMatrix, frame, frameBase, rectInQuad, autoCrop, autoCropFree, finalize, S, T, scaledMatrix, warp, downscale, encodeJpeg, encoderParams, rebuildSingle, assemble,
+    patchExif, patchXmp, xmpSegment, xmpText, exifSummary, readMPF, apply, inv, mul, isVertical, concat, yieldUI };
+})();
+/* ==== CORE END ==== */
+
+
+</script>
+<script>
+(() => {
+const $ = (id) => document.getElementById(id);
+const st = { name:'', u8:null, info:null, P:null, prev:null, prevCanvas:null, lines:[], sel:-1, drawType:'auto', aspect:0, p3:false,
+  base:null, baseKey:'', basePrev:null, crop:null, ratio:'orig', constrain:true, out:null, tab:'edit' };
+const COLORS = () => { const cs = getComputedStyle(document.documentElement); const g = (n) => cs.getPropertyValue(n).trim(); return { v:g('--v'), h:g('--h'), surface:g('--surface'), warn:g('--warn') }; };
+const fmtB = (n) => n > 1048576 ? (n/1048576).toFixed(2)+' MB' : n > 1024 ? (n/1024).toFixed(1)+' KB' : n+' B';
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const lt = (L) => L.t || (Core.isVertical(L) ? 'v' : 'h');
+const count = (t) => st.lines.filter(L => lt(L) === t).length;
+let toastT = 0;
+const flash = (m) => { const el = $('toast'); el.textContent = m; el.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => { el.style.display = 'none'; }, 3000); };
+let dlCap = null;
+if (window.claude && typeof window.claude.use === 'function') window.claude.use('downloads').then(d => { dlCap = d; }).catch(() => {});
+
+/* ---------- file input ---------- */
+const fileIn = $('file');
+$('openBtn').onclick = () => fileIn.click();
+$('openBtn2').onclick = () => fileIn.click();
+fileIn.onchange = () => { if (fileIn.files[0]) load(fileIn.files[0]); fileIn.value = ''; };
+const drop = $('drop');
+['dragenter','dragover'].forEach(t => document.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(t => document.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+document.addEventListener('drop', e => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) load(f); });
+
+function setStep(txt, p) { $('step').textContent = txt || ''; $('prog').style.width = ((p||0)*100).toFixed(1)+'%'; }
+
+async function decodeToBitmap(bytes) {
+  const blob = new Blob([bytes], { type:'image/jpeg' });
+  try { return await createImageBitmap(blob, { colorSpaceConversion:'none', premultiplyAlpha:'none' }); } catch (_) {}
+  try { return await createImageBitmap(blob); } catch (_) {}
+  const url = URL.createObjectURL(blob);
+  try { const img = new Image(); img.src = url; await img.decode(); return img; } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+}
+// decode tile by tile into an oriented 1 or 3 channel buffer (no large canvas, works within iOS limits)
+async function decodeOriented(bytes, o, ch, expectW, expectH, onP) {
+  const bmp = await decodeToBitmap(bytes);
+  const rw = bmp.width || bmp.naturalWidth, rh = bmp.height || bmp.naturalHeight;
+  if (expectW && (rw !== expectW || rh !== expectH)) throw new Error('브라우저가 축소된 크기로 디코딩했습니다 ('+rw+'x'+rh+', 원본 '+expectW+'x'+expectH+')');
+  const [ow, oh] = Core.orientedSize(rw, rh, o);
+  const buf = new Uint8Array(ow * oh * ch);
+  const TS = 1024, cv = document.createElement('canvas'); cv.width = TS; cv.height = TS;
+  const ctx = cv.getContext('2d', { willReadFrequently:true });
+  const total = Math.ceil(rw/TS) * Math.ceil(rh/TS); let k = 0;
+  for (let ty = 0; ty < rh; ty += TS) for (let tx = 0; tx < rw; tx += TS) {
+    const tw = Math.min(TS, rw - tx), th = Math.min(TS, rh - ty);
+    ctx.clearRect(0,0,TS,TS);
+    ctx.drawImage(bmp, tx, ty, tw, th, 0, 0, tw, th);
+    Core.writeTile(buf, ow, ch, ctx.getImageData(0, 0, tw, th).data, tx, ty, tw, th, rw, rh, o);
+    k++; onP && onP(k/total); if (k % 4 === 0) await Core.yieldUI();
+  }
+  if (bmp.close) bmp.close();
+  return { buf, w: ow, h: oh };
+}
+
+async function load(file) {
+  Object.assign(st, { name:file.name, lines:[], sel:-1, out:null, base:null, baseKey:'', crop:null, P:null, prev:null });
+  $('report').innerHTML = ''; setTab('edit');
+  $('fname').textContent = file.name + ' (' + fmtB(file.size) + ')';
+  flash('사진을 분석하는 중');
+  const u8 = new Uint8Array(await file.arrayBuffer());
+  let info;
+  try { info = Core.analyze(u8); } catch (e) { flash('분석 실패: ' + e.message); return; }
+  st.u8 = u8; st.info = info;
+  renderInfo();
+  if (info.format === 'heif') { $('infoBox').open = true; drawSrc(); flash('HEIC 는 아직 지원하지 않습니다. 파일 분석을 확인하세요.'); return; }
+  try {
+    st.P = await decodeOriented(Core.strippedForDecode(u8, info.primaryLength), info.orientation, 3, info.sof.width, info.sof.height);
+  } catch (e) { flash('디코딩 실패: ' + e.message); return; }
+  const L = 1600, s = Math.min(1, L / Math.max(st.P.w, st.P.h));
+  const pw = Math.max(1, Math.round(st.P.w*s)), ph = Math.max(1, Math.round(st.P.h*s));
+  st.prev = { buf: s < 1 ? Core.downscale(st.P.buf, st.P.w, st.P.h, 3, pw, ph) : st.P.buf, w: pw, h: ph, s: pw / st.P.w };
+  st.p3 = !!(info.icc && /P3/i.test(info.icc));
+  st.prevCanvas = toCanvas(st.prev.buf, pw, ph, 3);
+  $('empty').style.display = 'none';
+  $('tCrop').disabled = false; $('toCrop').disabled = false; $('exportBtn').disabled = false;
+  $('toast').style.display = 'none';
+  update();
+}
+
+function ctx2d(cv) {
+  if (st.p3) { try { const c = cv.getContext('2d', { colorSpace:'display-p3' }); if (c) return c; } catch (_) {} }
+  return cv.getContext('2d');
+}
+function toCanvas(buf, w, h, ch) {
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const c = ctx2d(cv);
+  let id;
+  try { id = st.p3 ? new ImageData(w, h, { colorSpace:'display-p3' }) : new ImageData(w, h); } catch (_) { id = new ImageData(w, h); }
+  const d = id.data;
+  for (let i = 0, j = 0; i < w*h; i++, j += ch) { d[i*4] = buf[j]; d[i*4+1] = buf[j+(ch>1?1:0)]; d[i*4+2] = buf[j+(ch>1?2:0)]; d[i*4+3] = 255; }
+  c.putImageData(id, 0, 0);
+  return cv;
+}
+
+/* ---------- info panel ---------- */
+function roleName(r) { return ({'apple-gainmap':'Apple 게인맵','iso-gainmap':'ISO 게인맵','depth':'깊이 맵','matte':'매트','image':'보조 이미지','invalid':'해석 불가','unknown':'미상'})[r] || r; }
+function renderInfo() {
+  const i = st.info, box = $('info');
+  if (!i) { box.innerHTML = ''; return; }
+  if (i.format === 'heif') {
+    box.innerHTML = `<dl class="kv"><dt>형식</dt><dd>HEIF (${esc(i.brand)})</dd></dl>
+      <p class="note warn">HEIC 입력은 2단계 대상입니다. 이번 버전은 JPEG 만 처리합니다.</p>
+      <p class="note">아이폰 설정 &gt; 카메라 &gt; 포맷 &gt; 높은 호환성 으로 촬영한 원본 JPEG 로 시험해 주세요.</p>`;
+    return;
+  }
+  const ex = i.exif, t = ex ? ex.tags : {}, gm = i.gainmap, ah = (ex && ex.appleHDR) || {};
+  const oriName = {1:'정방향',2:'좌우 반전',3:'180도',4:'상하 반전',5:'전치',6:'시계 90도',7:'역전치',8:'반시계 90도'}[i.orientation] || i.orientation;
+  const c0 = i.sof.comps[0];
+  const rows = [
+    ['형식', 'JPEG ' + (i.sof.progressive ? 'Progressive' : 'Baseline') + ', ' + (i.sof.comps.length === 3 ? 'YCbCr ' + (c0.h===2&&c0.v===2 ? '4:2:0' : c0.h===2 ? '4:2:2' : '4:4:4') : '흑백')],
+    ['크기', i.sof.width + ' x ' + i.sof.height + ', 방향 ' + oriName]
+  ];
+  if (t.Make || t.Model) rows.push(['카메라', esc([t.Make, t.Model].filter(Boolean).join(' '))]);
+  if (t.LensModel) rows.push(['렌즈', esc(t.LensModel)]);
+  if (t.DateTimeOriginal) rows.push(['촬영', esc(t.DateTimeOriginal)]);
+  rows.push(['EXIF', ex ? `<span class="tag ok">있음</span>${ex.hasGPS?'<span class="tag ok">GPS</span>':'<span class="tag mute">GPS 없음</span>'}${ex.thumb?'<span class="tag mute">썸네일</span>':''}` : '<span class="tag warn">없음</span>']);
+  rows.push(['MakerNote', ex && ex.makerApple ? `<span class="tag ok">Apple</span>${ah[33]!=null?'헤드룸 '+(+ah[33]).toFixed(3):''}` : ex && ex.hasMakerNote ? '<span class="tag mute">기타 제조사</span>' : '<span class="tag mute">없음</span>']);
+  rows.push(['ICC', i.icc ? esc(i.icc) : '<span class="tag warn">없음</span>']);
+  rows.push(['XMP', i.xmp ? `<span class="tag ok">있음</span>${fmtB(i.xmp.length)}` : '<span class="tag mute">없음</span>']);
+  rows.push(['HDR', (gm ? `<span class="tag ok">${gm.role==='apple-gainmap'?'Apple 게인맵':'ISO/Ultra HDR 게인맵'}</span>${gm.sof?gm.sof.width+' x '+gm.sof.height+(gm.sof.comps.length===1?', 흑백':''):''}` : '<span class="tag mute">없음, SDR 사진</span>') + (i.iso21496 ? ' <span class="tag mute">ISO 21496-1</span>' : '') + (i.hdrgm ? ' <span class="tag mute">hdrgm</span>' : '')]);
+  if (i.mpf) rows.push(['MPF', (i.secondaries.length + 1) + '개 이미지, ' + i.secondaries.map(s => roleName(s.role)).join(', ')]);
+  box.innerHTML = '<dl class="kv">' + rows.map(r => `<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join('') + '</dl>'
+    + (!gm ? '<p class="note">게인맵이 없으면 HDR 로 표시되지 않는 사진입니다. 사진 선택기를 거치며 변환된 사본일 수 있으니, 원본 검증에는 파일 앱이나 Mac 의 수정되지 않은 원본 내보내기로 가져온 JPEG 를 권장합니다.</p>' : '')
+    + (ex && !ex.hasGPS ? '<p class="note">GPS 가 없습니다. 원본에 위치가 있었다면 업로드 경로에서 빠진 것입니다.</p>' : '');
+}
+
+/* ---------- tabs ---------- */
+function setTab(t) {
+  st.tab = t;
+  $('tabEdit').hidden = t !== 'edit'; $('tabCrop').hidden = t !== 'crop';
+  $('tEdit').setAttribute('aria-selected', String(t === 'edit')); $('tCrop').setAttribute('aria-selected', String(t === 'crop'));
+  if (t === 'crop') enterCrop(); else drawSrc();
+  window.scrollTo({ top: 0 });
+}
+$('tEdit').onclick = () => setTab('edit');
+$('tCrop').onclick = () => { if (st.P) setTab('crop'); };
+$('toCrop').onclick = () => { if (st.P) setTab('crop'); };
+
+function fitCanvas(cv) {
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(r.width*dpr)), h = Math.max(1, Math.round(r.height*dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  return { w: r.width, h: r.height, dpr };
+}
+window.addEventListener('resize', () => { if (st.tab === 'edit') drawSrc(); else drawCrop(); });
+
+/* ================= 1. 보정 탭 ================= */
+const srcView = $('srcView'), loupe = $('loupe');
+let vt = { s:1, ox:0, oy:0 };
+const toView = (X, Y) => [X*vt.s + vt.ox, Y*vt.s + vt.oy];
+const toImg = (x, y) => [(x - vt.ox)/vt.s, (y - vt.oy)/vt.s];
+function drawSrc() {
+  const c = ctx2d(srcView), { w, h, dpr } = fitCanvas(srcView);
+  c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,w,h);
+  if (!st.prev) return;
+  const pad = 12, s = Math.min((w-2*pad)/st.prev.w, (h-2*pad)/st.prev.h);
+  vt = { s: s * st.prev.s, ox: (w - st.prev.w*s)/2, oy: (h - st.prev.h*s)/2 };
+  c.imageSmoothingQuality = 'high';
+  c.drawImage(st.prevCanvas, vt.ox, vt.oy, st.prev.w*s, st.prev.h*s);
+  const col = COLORS();
+  st.lines.forEach((L, i) => {
+    const [x1,y1] = toView(L[0],L[1]), [x2,y2] = toView(L[2],L[3]);
+    const color = lt(L) === 'v' ? col.v : col.h, sel = i === st.sel;
+    c.lineCap = 'round';
+    c.strokeStyle = 'rgba(0,0,0,.45)'; c.lineWidth = sel ? 5 : 4; c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke();
+    c.strokeStyle = color; c.lineWidth = sel ? 3 : 2; c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke();
+    for (const [x,y] of [[x1,y1],[x2,y2]]) { c.beginPath(); c.arc(x,y,sel?7:5.5,0,Math.PI*2); c.fillStyle = col.surface; c.fill(); c.lineWidth = 2; c.strokeStyle = color; c.stroke(); }
+  });
+}
+function renderLines() {
+  const ul = $('lineList'), col = COLORS();
+  ul.innerHTML = '';
+  st.lines.forEach((L, i) => {
+    const v = lt(L) === 'v';
+    const ang = Math.atan2(L[3]-L[1], L[2]-L[0]) * 180/Math.PI;
+    const dev = v ? 90 - Math.abs(ang) : (Math.abs(ang) > 90 ? 180 - Math.abs(ang) : Math.abs(ang));
+    const li = document.createElement('li'); if (i === st.sel) li.className = 'sel';
+    li.innerHTML = `<span class="sw" style="background:${v?col.v:col.h}"></span><span class="grow">${v?'수직':'수평'} ${i+1}, 기울기 ${Math.abs(dev).toFixed(1)}°</span>`
+      + `<button class="btn small" data-act="flip">${v?'수평으로':'수직으로'}</button><button class="btn small" data-act="del" aria-label="가이드 ${i+1} 삭제">삭제</button>`;
+    li.onclick = (e) => {
+      const act = e.target.dataset && e.target.dataset.act;
+      if (act === 'del') { st.lines.splice(i,1); st.sel = -1; }
+      else if (act === 'flip') { const nt = v ? 'h' : 'v'; if (count(nt) >= 2) { flash((nt==='v'?'수직':'수평') + ' 가이드는 이미 2개입니다.'); return; } L.t = nt; st.sel = i; }
+      else st.sel = i;
+      update();
+    };
+    ul.appendChild(li);
+  });
+  $('cnt').textContent = '수직 ' + count('v') + '/2, 수평 ' + count('h') + '/2';
+  $('clearBtn').disabled = !st.lines.length;
+  if (st.P) { const { mode } = Core.uprightMatrix(st.lines, st.P.w, st.P.h, st.aspect); $('modeTxt').textContent = st.lines.length ? '현재 보정: ' + mode : ''; }
+}
+function update() { renderLines(); drawSrc(); st.out = null; }
+$('clearBtn').onclick = () => { st.lines = []; st.sel = -1; update(); };
+
+let drag = null;
+const clampImg = (X, Y) => [Math.max(0, Math.min(st.P.w, X)), Math.max(0, Math.min(st.P.h, Y))];
+srcView.addEventListener('pointerdown', (e) => {
+  if (!st.P) return;
+  const r = srcView.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  const R = e.pointerType === 'touch' ? 22 : 11;
+  let hit = null, bestD = R;
+  st.lines.forEach((L, i) => { for (const k of [0,1]) { const [vx,vy] = toView(L[k*2], L[k*2+1]); const d = Math.hypot(vx-x, vy-y); if (d < bestD) { bestD = d; hit = { i, k }; } } });
+  if (hit) { drag = { i: hit.i, k: hit.k }; st.sel = hit.i; }
+  else {
+    const nv = count('v'), nh = count('h');
+    if (st.drawType === 'v' && nv >= 2) { flash('수직 가이드는 2개까지입니다. 지우거나 끝점을 옮기세요.'); return; }
+    if (st.drawType === 'h' && nh >= 2) { flash('수평 가이드는 2개까지입니다. 지우거나 끝점을 옮기세요.'); return; }
+    if (st.drawType === 'auto' && nv >= 2 && nh >= 2) { flash('수직 2개, 수평 2개를 모두 그렸습니다. 끝점을 옮겨 조정하세요.'); return; }
+    const [X, Y] = clampImg(...toImg(x, y));
+    const NL = [X, Y, X, Y]; if (st.drawType !== 'auto') NL.t = st.drawType;
+    st.lines.push(NL); st.sel = st.lines.length - 1; drag = { i: st.sel, k: 1, fresh: true };
+  }
+  srcView.setPointerCapture(e.pointerId);
+  showLoupe(x, y);
+  drawSrc();
+});
+srcView.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const r = srcView.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  const [X, Y] = clampImg(...toImg(x, y));
+  const L = st.lines[drag.i]; L[drag.k*2] = X; L[drag.k*2+1] = Y;
+  showLoupe(x, y);
+  drawSrc();
+});
+const endDrag = () => {
+  if (!drag) return;
+  const L = st.lines[drag.i];
+  if (drag.fresh && Math.hypot((L[2]-L[0])*vt.s, (L[3]-L[1])*vt.s) < 12) { st.lines.splice(drag.i, 1); st.sel = -1; }
+  else if (drag.fresh && !L.t) {
+    const t = Core.isVertical(L) ? 'v' : 'h';
+    const o = t === 'v' ? 'h' : 'v', nm = (x) => x === 'v' ? '수직' : '수평';
+    if (count(t) <= 2) L.t = t;
+    else if (count(o) < 2) { L.t = o; flash(nm(t) + ' 가이드가 이미 2개라 ' + nm(o) + ' 가이드로 처리했습니다.'); }
+    else { st.lines.splice(drag.i, 1); st.sel = -1; flash('가이드는 수직 2개, 수평 2개까지입니다.'); }
+  }
+  drag = null; loupe.style.display = 'none'; update();
+};
+srcView.addEventListener('pointerup', endDrag);
+srcView.addEventListener('pointercancel', endDrag);
+window.addEventListener('keydown', (e) => {
+  if (st.tab !== 'edit' || document.activeElement.tagName === 'INPUT') return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && st.sel >= 0) { st.lines.splice(st.sel,1); st.sel = -1; update(); e.preventDefault(); }
+  else if (e.key === 'Escape') { st.sel = -1; update(); }
+});
+// loupe: full-resolution pixels at 2x, placed away from the finger
+function showLoupe(x, y) {
+  const [X, Y] = toImg(x, y), P = st.P; if (!P) return;
+  const N = 62, half = N/2, lc = loupe.getContext('2d');
+  const id = lc.createImageData(N, N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const sx = Math.round(X - half + i), sy = Math.round(Y - half + j), o = (j*N+i)*4;
+    id.data[o+3] = 255;
+    if (sx < 0 || sy < 0 || sx >= P.w || sy >= P.h) continue;
+    const p = (sy*P.w + sx)*3; id.data[o] = P.buf[p]; id.data[o+1] = P.buf[p+1]; id.data[o+2] = P.buf[p+2];
+  }
+  const tmp = document.createElement('canvas'); tmp.width = N; tmp.height = N; tmp.getContext('2d').putImageData(id, 0, 0);
+  lc.imageSmoothingEnabled = false; lc.clearRect(0,0,124,124);
+  lc.save(); lc.beginPath(); lc.arc(62,62,62,0,Math.PI*2); lc.clip(); lc.drawImage(tmp, 0, 0, 124, 124);
+  const col = COLORS(), L = drag ? st.lines[drag.i] : null;
+  if (L) { lc.strokeStyle = lt(L) === 'v' ? col.v : col.h; lc.lineWidth = 1.5; lc.beginPath(); lc.moveTo((L[0]-X+half)*2, (L[1]-Y+half)*2); lc.lineTo((L[2]-X+half)*2, (L[3]-Y+half)*2); lc.stroke(); }
+  lc.strokeStyle = 'rgba(255,255,255,.9)'; lc.lineWidth = 1; lc.beginPath(); lc.moveTo(62,52); lc.lineTo(62,72); lc.moveTo(52,62); lc.lineTo(72,62); lc.stroke();
+  lc.restore();
+  const r = srcView.getBoundingClientRect();
+  loupe.style.left = (x < r.width / 2 ? r.width - 134 : 10) + 'px';
+  loupe.style.top = '10px';
+  loupe.style.display = 'block';
+}
+
+/* ================= 2. 크롭 및 결과 탭 ================= */
+const cropView = $('cropView');
+let cvt = { s:1, ox:0, oy:0 }, baseToken = 0;
+const geomKey = () => JSON.stringify([st.lines.map(L => [L[0],L[1],L[2],L[3], lt(L)]), st.aspect]);
+const ORIG_AR = () => st.P.w / st.P.h;
+function autoRect() {
+  const b = st.base; if (!b) return null;
+  const r = st.ratio === 'orig' ? Core.autoCrop(b.quad, ORIG_AR()) : Core.autoCropFree(b.quad);
+  return r || { x: 0, y: 0, w: b.bw, h: b.bh };
+}
+async function enterCrop() {
+  const k = geomKey();
+  if (k !== st.baseKey || !st.base) {
+    const my = ++baseToken;
+    const { M, mode } = Core.uprightMatrix(st.lines, st.P.w, st.P.h, st.aspect);
+    const base = Core.frameBase(M, st.P.w, st.P.h);
+    if (!base) { st.base = null; drawCrop(); $('modeTxt2').textContent = '현재 가이드로는 보정할 수 없습니다. 보정 탭에서 가이드를 고쳐 주세요.'; $('exportBtn').disabled = true; return; }
+    const ps = st.prev.s, q = Math.min(ps, 1600 / Math.max(base.bw, base.bh));
+    const Fp = Core.mul(Core.S(q, q), Core.mul(base.F, Core.S(1/ps, 1/ps)));
+    const pw = Math.max(1, Math.round(base.bw*q)), ph = Math.max(1, Math.round(base.bh*q));
+    const buf = await Core.warp(st.prev.buf, st.prev.w, st.prev.h, 3, Fp, pw, ph, 0);
+    if (my !== baseToken) return;
+    st.base = { ...base, mode }; st.baseKey = k;
+    st.basePrev = { canvas: toCanvas(buf, pw, ph, 3), q };
+    st.crop = autoRect(); st.out = null; $('report').innerHTML = ''; setStep('');
+    $('modeTxt2').textContent = st.lines.length ? '적용된 보정: ' + mode : '가이드가 없어 크롭만 적용합니다.';
+    $('exportBtn').disabled = false;
+  }
+  drawCrop();
+}
+function drawCrop() {
+  const c = ctx2d(cropView), { w, h, dpr } = fitCanvas(cropView);
+  c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,w,h);
+  const b = st.base; if (!b || !st.basePrev || !st.crop) return;
+  const pad = 22, fs = Math.min((w-2*pad)/(b.bw*st.basePrev.q), (h-2*pad)/(b.bh*st.basePrev.q));
+  cvt = { s: st.basePrev.q*fs, ox: (w - b.bw*st.basePrev.q*fs)/2, oy: (h - b.bh*st.basePrev.q*fs)/2 };
+  c.imageSmoothingQuality = 'high';
+  c.drawImage(st.basePrev.canvas, cvt.ox, cvt.oy, b.bw*cvt.s, b.bh*cvt.s);
+  // image boundary (where real pixels exist)
+  c.save(); c.setLineDash([5,4]); c.strokeStyle = 'rgba(255,255,255,.6)'; c.lineWidth = 1;
+  c.beginPath(); b.quad.forEach(([X,Y], i) => { const x = X*cvt.s+cvt.ox, y = Y*cvt.s+cvt.oy; i ? c.lineTo(x,y) : c.moveTo(x,y); }); c.closePath(); c.stroke(); c.restore();
+  const r = st.crop, rx = r.x*cvt.s+cvt.ox, ry = r.y*cvt.s+cvt.oy, rw = r.w*cvt.s, rh = r.h*cvt.s;
+  // dim outside
+  c.fillStyle = 'rgba(0,0,0,.58)';
+  c.beginPath(); c.rect(0,0,w,h); c.rect(rx,ry,rw,rh); c.fill('evenodd');
+  // grid: thirds while dragging, 8x8 for alignment otherwise
+  const n = cdrag ? 3 : 8;
+  for (const [col, off] of [['rgba(0,0,0,.3)', 1], ['rgba(255,255,255,.5)', 0]]) {
+    c.strokeStyle = col; c.lineWidth = 1; c.beginPath();
+    for (let i = 1; i < n; i++) { const x = Math.round(rx + rw*i/n)+.5+off, y = Math.round(ry + rh*i/n)+.5+off; c.moveTo(x, ry); c.lineTo(x, ry+rh); c.moveTo(rx, y); c.lineTo(rx+rw, y); }
+    c.stroke();
+  }
+  c.strokeStyle = '#fff'; c.lineWidth = 1.5; c.strokeRect(rx, ry, rw, rh);
+  // corner brackets and (free mode) edge bars
+  c.lineWidth = 4; c.lineCap = 'butt'; const k = Math.min(22, rw/3, rh/3);
+  for (const [cx, cy, dx, dy] of [[rx,ry,1,1],[rx+rw,ry,-1,1],[rx+rw,ry+rh,-1,-1],[rx,ry+rh,1,-1]]) {
+    c.beginPath(); c.moveTo(cx + dx*k, cy+dy*1.5); c.lineTo(cx+dx*1.5, cy+dy*1.5); c.lineTo(cx+dx*1.5, cy + dy*k); c.stroke();
+  }
+  if (st.ratio === 'free') {
+    const m = Math.min(18, rw/4, rh/4);
+    c.beginPath();
+    c.moveTo(rx+rw/2-m, ry+1.5); c.lineTo(rx+rw/2+m, ry+1.5); c.moveTo(rx+rw/2-m, ry+rh-1.5); c.lineTo(rx+rw/2+m, ry+rh-1.5);
+    c.moveTo(rx+1.5, ry+rh/2-m); c.lineTo(rx+1.5, ry+rh/2+m); c.moveTo(rx+rw-1.5, ry+rh/2-m); c.lineTo(rx+rw-1.5, ry+rh/2+m);
+    c.stroke();
+  }
+  const inside = Core.rectInQuad(b.quad, r);
+  $('cropSize').textContent = Math.round(r.w) + ' x ' + Math.round(r.h) + (st.ratio === 'free' ? ', ' + (r.w/r.h).toFixed(2) + ':1' : '');
+  $('cropNote').textContent = inside ? '모서리를 끌어 크기를, 안쪽을 끌어 위치를 바꿉니다.' + (st.ratio === 'free' ? ' 변도 끌 수 있습니다.' : '') : '크롭 영역에 빈 영역이 포함되어 검정으로 채워집니다.';
+  $('cropNote').className = 'note' + (inside ? '' : ' warn');
+}
+// crop interaction
+let cdrag = null;
+const toBase = (x, y) => [(x - cvt.ox)/cvt.s, (y - cvt.oy)/cvt.s];
+function cropHandle(x, y, R) {
+  const r = st.crop, rx = r.x*cvt.s+cvt.ox, ry = r.y*cvt.s+cvt.oy, rw = r.w*cvt.s, rh = r.h*cvt.s;
+  const cands = [['nw',rx,ry],['ne',rx+rw,ry],['se',rx+rw,ry+rh],['sw',rx,ry+rh]];
+  if (st.ratio === 'free') cands.push(['n',rx+rw/2,ry],['s',rx+rw/2,ry+rh],['w',rx,ry+rh/2],['e',rx+rw,ry+rh/2]);
+  let best = null, bd = R;
+  for (const [n, hx, hy] of cands) { const d = Math.hypot(hx-x, hy-y); if (d < bd) { bd = d; best = n; } }
+  if (best) return best;
+  if (st.ratio === 'free') {
+    if (Math.abs(y-ry) < R*0.6 && x > rx && x < rx+rw) return 'n';
+    if (Math.abs(y-ry-rh) < R*0.6 && x > rx && x < rx+rw) return 's';
+    if (Math.abs(x-rx) < R*0.6 && y > ry && y < ry+rh) return 'w';
+    if (Math.abs(x-rx-rw) < R*0.6 && y > ry && y < ry+rh) return 'e';
+  }
+  if (x > rx && x < rx+rw && y > ry && y < ry+rh) return 'move';
+  return null;
+}
+function candidate(hd, r0, p, d) {
+  const b = st.base, minS = Math.max(16, 0.03*Math.max(b.bw, b.bh));
+  const px = Math.max(0, Math.min(b.bw, p[0])), py = Math.max(0, Math.min(b.bh, p[1]));
+  if (hd === 'move') return { x: Math.max(0, Math.min(b.bw - r0.w, r0.x + d[0])), y: Math.max(0, Math.min(b.bh - r0.h, r0.y + d[1])), w: r0.w, h: r0.h };
+  if (hd.length === 2) {
+    const ax = hd.includes('w') ? r0.x + r0.w : r0.x, ay = hd.includes('n') ? r0.y + r0.h : r0.y;
+    const sx = hd.includes('w') ? -1 : 1, sy = hd.includes('n') ? -1 : 1;
+    let w = Math.max(minS, (px - ax) * sx), h = Math.max(minS, (py - ay) * sy);
+    if (st.ratio === 'orig') { const ar = ORIG_AR(); if (w / h > ar) w = h * ar; else h = w / ar; }
+    w = Math.min(w, sx > 0 ? b.bw - ax : ax); h = Math.min(h, sy > 0 ? b.bh - ay : ay);
+    if (st.ratio === 'orig') { const ar = ORIG_AR(); if (w / h > ar) w = h * ar; else h = w / ar; }
+    return { x: sx > 0 ? ax : ax - w, y: sy > 0 ? ay : ay - h, w, h };
+  }
+  const r = { ...r0 };
+  if (hd === 'n') { r.y = Math.min(py, r0.y + r0.h - minS); r.h = r0.y + r0.h - r.y; }
+  if (hd === 's') { r.h = Math.max(minS, py - r0.y); }
+  if (hd === 'w') { r.x = Math.min(px, r0.x + r0.w - minS); r.w = r0.x + r0.w - r.x; }
+  if (hd === 'e') { r.w = Math.max(minS, px - r0.x); }
+  return r;
+}
+// keep the rectangle inside the image when constrained: go as far toward the target as stays valid
+function constrainTo(prev, cand) {
+  if (!st.constrain || Core.rectInQuad(st.base.quad, cand)) return cand;
+  if (!Core.rectInQuad(st.base.quad, prev)) return cand;
+  let lo = 0, hi = 1;
+  const lerp = (t) => ({ x: prev.x + (cand.x-prev.x)*t, y: prev.y + (cand.y-prev.y)*t, w: prev.w + (cand.w-prev.w)*t, h: prev.h + (cand.h-prev.h)*t });
+  for (let i = 0; i < 14; i++) { const m = (lo+hi)/2; if (Core.rectInQuad(st.base.quad, lerp(m))) lo = m; else hi = m; }
+  return lerp(lo);
+}
+cropView.addEventListener('pointerdown', (e) => {
+  if (!st.base || !st.crop) return;
+  const r = cropView.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  const hd = cropHandle(x, y, e.pointerType === 'touch' ? 26 : 13);
+  if (!hd) return;
+  cdrag = { hd, start: toBase(x, y), r0: { ...st.crop } };
+  cropView.setPointerCapture(e.pointerId);
+  drawCrop();
+});
+cropView.addEventListener('pointermove', (e) => {
+  const r = cropView.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  if (!cdrag) { if (st.crop && e.pointerType === 'mouse') { const hd = cropHandle(x, y, 13); cropView.style.cursor = !hd ? 'default' : hd === 'move' ? 'move' : ({nw:'nwse-resize',se:'nwse-resize',ne:'nesw-resize',sw:'nesw-resize',n:'ns-resize',s:'ns-resize',w:'ew-resize',e:'ew-resize'})[hd]; } return; }
+  const p = toBase(x, y), d = [p[0] - cdrag.start[0], p[1] - cdrag.start[1]];
+  st.crop = constrainTo(st.crop, candidate(cdrag.hd, cdrag.r0, p, d));
+  st.out = null;
+  drawCrop();
+});
+const endCrop = () => { if (!cdrag) return; cdrag = null; $('report').innerHTML = ''; setStep(''); drawCrop(); };
+cropView.addEventListener('pointerup', endCrop);
+cropView.addEventListener('pointercancel', endCrop);
+$('autoBtn').onclick = () => { st.crop = autoRect(); st.out = null; $('report').innerHTML = ''; drawCrop(); };
+$('constrain').onchange = (e) => { st.constrain = e.target.checked; if (st.constrain && st.base && !Core.rectInQuad(st.base.quad, st.crop)) st.crop = autoRect(); drawCrop(); };
+
+/* ---------- export ---------- */
+$('exportBtn').onclick = runExport;
+async function runExport() {
+  const i = st.info, P = st.P; if (!P || !st.base || !st.crop) return;
+  const fr = Core.finalize(st.base, st.crop);
+  $('exportBtn').disabled = true; $('report').innerHTML = '';
+  const log = [], warn = [];
+  try {
+    const ep = Core.encoderParams(i);
+    setStep('주 이미지 원근 변형', 0);
+    const out = await Core.warp(P.buf, P.w, P.h, 3, fr.F, fr.width, fr.height, 0, p => setStep('주 이미지 원근 변형', p*0.3));
+    const enc = await Core.encodeJpeg({ width: fr.width, height: fr.height, data: out, channels: 3, subsampling: ep.subsampling, qLuma: ep.qLuma, qChroma: ep.qChroma, quality: 95,
+      onProgress: p => setStep('주 이미지 JPEG 인코딩', 0.3 + p*0.4) });
+    log.push('주 이미지 재인코딩, ' + (ep.qLuma ? '원본 양자화 테이블 재사용' : '품질 95') + ', ' + (ep.subsampling === '420' ? '4:2:0' : '4:4:4') + (ep.note ? ' (' + ep.note + ')' : ''));
+    let thumb = null;
+    const exSeg = i.segs.find(s => s.kind === 'exif');
+    if (exSeg && i.exif && i.exif.thumb) {
+      let maxSide = 160;
+      try { const o = exSeg.dataStart + 6 + i.exif.thumb.offset; const tb = st.u8.subarray(o, o + i.exif.thumb.length); const ts = Core.readSOF(tb, Core.parseJpeg(tb).segs); if (ts) maxSide = Math.max(ts.width, ts.height); } catch (_) {}
+      const k = Math.min(1, maxSide / Math.max(fr.width, fr.height));
+      const tw = Math.max(1, Math.round(fr.width*k)), th = Math.max(1, Math.round(fr.height*k));
+      thumb = await Core.encodeJpeg({ width: tw, height: th, data: Core.downscale(out, fr.width, fr.height, 3, tw, th), channels: 3, quality: 80, subsampling: '420' });
+    }
+    const secOut = [];
+    for (let n = 0; n < i.secondaries.length; n++) {
+      const s = i.secondaries[n], label = roleName(s.role);
+      const base = 0.7 + 0.25 * n / i.secondaries.length, span = 0.25 / i.secondaries.length;
+      if (s.role === 'invalid' || !s.sof) { secOut.push(s.bytes); warn.push(label + ' 는 해석할 수 없어 원본 그대로 두었습니다. 위치가 어긋날 수 있습니다.'); continue; }
+      try {
+        const sp = Core.encoderParams(s);
+        setStep(label + ' 디코딩', base);
+        const G = await decodeOriented(Core.strippedForDecode(s.bytes, s.bytes.length), i.orientation, sp.channels, s.sof.width, s.sof.height);
+        const sx = G.w / P.w, sy = G.h / P.h;
+        const gw = Math.max(1, Math.round(fr.width*sx)), gh = Math.max(1, Math.round(fr.height*sy));
+        const go = await Core.warp(G.buf, G.w, G.h, sp.channels, Core.scaledMatrix(fr.F, sx, sy), gw, gh, 0, p => setStep(label + ' 동일 변형 적용', base + p*span*0.5));
+        const genc = await Core.encodeJpeg({ width: gw, height: gh, data: go, channels: sp.channels, subsampling: sp.subsampling, qLuma: sp.qLuma, qChroma: sp.qChroma, quality: 95,
+          onProgress: p => setStep(label + ' 인코딩', base + span*0.5 + p*span*0.5) });
+        secOut.push(Core.rebuildSingle(s.bytes, s.segs, genc, null));
+        log.push(label + ' ' + G.w + 'x' + G.h + ' → ' + gw + 'x' + gh + ', 같은 행렬을 해상도 비율 (' + sx.toFixed(3) + ') 로 환산해 적용' + (sp.channels === 1 ? ', 흑백 유지' : ''));
+      } catch (e) { secOut.push(s.bytes); warn.push(label + ' 처리 실패 (' + e.message + '), 원본 그대로 두었습니다.'); }
+    }
+    setStep('메타데이터 이식', 0.96);
+    const replace = new Map();
+    if (exSeg) { const pe = Core.patchExif(st.u8, exSeg, { width: fr.width, height: fr.height, thumb }); replace.set(exSeg, pe.bytes); log.push('EXIF 원본 복사 (MakerNote, GPS 포함)', ...pe.log); }
+    const xs = i.segs.find(s => s.kind === 'xmp');
+    if (xs) {
+      const gmIdx = i.secondaries.findIndex(s => s.role === 'apple-gainmap' || s.role === 'iso-gainmap');
+      const px = Core.patchXmp(i.xmp, { width: fr.width, height: fr.height, gainMapLength: gmIdx >= 0 ? secOut[gmIdx].length : null });
+      replace.set(xs, Core.xmpSegment(px.text)); log.push('XMP 원본 복사', ...px.log);
+    }
+    if (i.segs.some(s => s.kind === 'icc')) log.push('ICC 프로파일 원본 그대로 (' + (i.icc || '') + ')');
+    const res = Core.assemble(st.u8, i, enc, replace, secOut);
+    log.push(...res.log);
+    st.out = res.bytes;
+    const v = Core.analyze(res.bytes);
+    setStep('완료', 1);
+    renderReport(v, log, warn, fr);
+  } catch (e) { console.error(e); setStep(''); $('report').innerHTML = '<p class="note warn">처리 실패: ' + esc(e.message) + '</p>'; }
+  $('exportBtn').disabled = false;
+}
+function renderReport(v, log, warn, fr) {
+  const i = st.info, chk = [];
+  const ok = (b, t) => chk.push(`<div><span class="tag ${b?'ok':'err'}">${b?'통과':'실패'}</span>${t}</div>`);
+  ok(v.sof.width === fr.width && v.sof.height === fr.height, '크기 ' + v.sof.width + ' x ' + v.sof.height);
+  ok(v.orientation === 1, 'Orientation 1 (픽셀에 회전 반영)');
+  if (i.exif) ok(!!v.exif && v.exif.hasGPS === i.exif.hasGPS && v.exif.makerApple === i.exif.makerApple && v.exif.tags.Model === i.exif.tags.Model, 'EXIF 와 MakerNote, GPS 보존');
+  if (i.exif && i.exif.appleHDR && i.exif.appleHDR[33] != null) ok(v.exif && v.exif.appleHDR && v.exif.appleHDR[33] === i.exif.appleHDR[33], 'Apple HDR 헤드룸 값 동일');
+  if (i.icc) ok(v.icc === i.icc, 'ICC 프로파일 동일');
+  if (i.mpf) ok(v.secondaries.length === i.secondaries.length && v.secondaries.every((s, k) => s.role === i.secondaries[k].role), 'MPF 보조 이미지 ' + v.secondaries.length + '개, 역할 식별 일치');
+  if (i.gainmap) { const o5 = i.orientation >= 5, want = (o5 ? i.gainmap.sof.height : i.gainmap.sof.width) / (o5 ? i.sof.height : i.sof.width), g = v.gainmap;
+    ok(!!g && Math.abs(g.sof.width / v.sof.width - want) < 0.01, '게인맵 해상도 비율 유지 (' + want.toFixed(3) + ')'); }
+  $('report').innerHTML = `<div class="row"><button class="btn primary block" id="saveBtn">파일 저장</button></div><p class="note" id="saveMsg"></p>`
+    + `<div class="check">${chk.join('')}</div>`
+    + warn.map(w => `<p class="note warn">${esc(w)}</p>`).join('')
+    + `<p class="note">결과 ${fmtB(st.out.length)}, 원본 ${fmtB(st.u8.length)}</p>`
+    + `<details style="margin-top:8px"><summary>처리 내역</summary><ol class="report">${log.map(l => `<li>${esc(l)}</li>`).join('')}</ol></details>`;
+  $('saveBtn').onclick = save;
+}
+async function save() {
+  if (!st.out) return;
+  const name = st.name.replace(/\.(jpe?g)$/i, '') + '_upright.jpg';
+  const blob = new Blob([st.out], { type: 'image/jpeg' });
+  const msg = $('saveMsg');
+  if (dlCap) {
+    try { await dlCap.save({ filename: name, data: blob }); msg.textContent = name + ' 을 저장했습니다.'; return; }
+    catch (e) {
+      if (e && e.code === 'declined') { msg.textContent = '저장을 취소했습니다.'; return; }
+      if (e && e.code === 'rate_limited') { msg.textContent = '저장 확인 창이 이미 열려 있습니다. 잠시 후 다시 시도하세요.'; return; }
+    }
+  }
+  // standalone hosting on a phone: share sheet lets the user save straight to Photos
+  try {
+    const f = new File([blob], name, { type: 'image/jpeg' });
+    if (navigator.canShare && matchMedia('(pointer:coarse)').matches && navigator.canShare({ files: [f] })) {
+      try { await navigator.share({ files: [f] }); msg.textContent = '공유 시트에서 이미지 저장을 고르면 사진 앱에 들어갑니다.'; return; }
+      catch (e) { if (e && e.name === 'AbortError') { msg.textContent = '저장을 취소했습니다.'; return; } }
+    }
+  } catch (_) {}
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  msg.textContent = name + ' 다운로드를 시작했습니다.';
+}
+drawSrc();
+})();
+</script>
+</body>
+</html>
